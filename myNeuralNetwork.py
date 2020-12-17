@@ -1,12 +1,14 @@
 import numpy as np
 import random
 import time
+# np.seterr("raise")
+# all warnings will be exceptions. I thing it's useful
+# if we will fix warnings of numpy we will bypass strong errors in future
 
 
 # This was wrote in 22 days ;)
 class Network:
     def __init__(self, sizes):
-
         self.num_layers = len(sizes)
         self.sizes = sizes
         self.biases = [np.random.randn(y, 1) for y in sizes[1:]]
@@ -18,7 +20,8 @@ class Network:
         wrong = 0
         for image, answer in zip(test, answers):
             res = self.evaluate(image)[1][-1]
-            if max(res) == res[answer]:
+            if max(res) == res[answer] > 0.5 and sum(res) < 5.5:
+                # second stmt means, what all other outputs lower than 0.5. 0.5*9 + 1- edge accepted
                 correct += 1
             else:
                 wrong += 1
@@ -52,7 +55,8 @@ class Network:
         arrForCalcAverageOfNablaB = []
         for inputActivation, result in zip(miniBatch, results):
             zs, activations = self.evaluate(inputActivation)
-            delta = [(activations[-1] - result) * sigmoid_prime(zs[-1])]  # delete 2
+            delta = [self.derivativeOfCostFunc(result, activations[-1])]
+            # delta = [(activations[-1] - result) * sigmoid_prime(zs[-1])]
             nablaOfBias = [delta[-1]]
             nablaOfWeights = [np.dot(delta[-1], np.transpose(activations[-2]))]
             for l in range(2, self.num_layers):
@@ -98,7 +102,7 @@ class Network:
             # train = train[indices]
             # trainAnswers = trainAnswers[indices]
 
-            lenOfBatch = 10
+            lenOfBatch = 100
             miniBatches = []
             batchesOfCorrectionData = []
             timeEpoch = time.time()
@@ -112,9 +116,13 @@ class Network:
             print("Train iteration is", epoch, ":")
             self.checkCorrectOfAnswer(test, testAnswers)
             t = round(time.time() - timeEpoch)
-            print("This epoch was calc in", t, "sec")
+            print("This epoch was calc in", t, "sec\n")
         t = round(time.time() - startTimeTrain)
         print("This network was trained in", t, "sec")
+
+    def derivativeOfCostFunc(self, y, a):
+        # Actually this is not just derivative of Cost. We mult in on da/dz, i.e. on sigmoid_prime
+        return a - y  # cross validation cost
 
 
 def sigmoid(z):

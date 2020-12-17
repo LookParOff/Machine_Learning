@@ -24,5 +24,5 @@ testImages = np.reshape(testImages, (10000, 28 * 28, 1)) / 255
 
 
 s = time.time()
-net.train(trainImages, resultOfTrainImages, testImages, answerOfTestImages, 10, 3)
+net.train(trainImages, resultOfTrainImages, testImages, answerOfTestImages, 10, 0.5)
 print("time of train", abs(s - time.time()))
