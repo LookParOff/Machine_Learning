@@ -91,7 +91,7 @@ class Network:
             self.biases[index] -= nablaB * learningRate
         return 0
 
-    def train(self, train, trainAnswers, test, testAnswers, epochs, learningRate):
+    def train(self, train, trainAnswers, test=None, testAnswers=None, epochs=10, learningRate=0.1):
         # print("Random net generate a random shit:")
         # self.checkCorrectOfAnswer(test, testAnswers)
         startTimeTrain = time.time()
@@ -114,7 +114,8 @@ class Network:
                 self.evaluateOnMiniBatch(miniBatch, correct, learningRate)
 
             print("Train iteration is", epoch, ":")
-            self.checkCorrectOfAnswer(test, testAnswers)
+            if test is not None and testAnswers is not None:
+                self.checkCorrectOfAnswer(test, testAnswers)
             t = round(time.time() - timeEpoch)
             print("This epoch was calc in", t, "sec\n")
         t = round(time.time() - startTimeTrain)

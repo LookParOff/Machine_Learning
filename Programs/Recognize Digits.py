@@ -1,9 +1,7 @@
 import numpy as np
 import mnist
 import time
-from myNeuralNetwork import Network
-import random
-
+from Algorithms.myNeuralNetwork import Network
 
 net = Network([784, 10, 10])
 trainImages = mnist.train_images()

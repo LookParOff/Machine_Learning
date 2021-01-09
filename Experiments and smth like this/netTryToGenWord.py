@@ -1,9 +1,5 @@
-import numpy as np
-import time
-import random
-from myNeuralNetwork import Network
-from networkAndFiles import saveToFile, loadFromFile
-import matplotlib.pyplot as plt
+from Algorithms.myNeuralNetwork import Network
+from Programs.networkAndFiles import loadFromFile
 
 
 # will take 10 symbols on one word

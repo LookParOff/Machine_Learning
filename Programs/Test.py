@@ -1,8 +1,6 @@
 import numpy as np
-import time
 import random
-from myNeuralNetwork import Network
-from networkAndFiles import saveToFile, loadFromFile
+from Algorithms.myNeuralNetwork import Network
 
 
 def fromBinToDec(a):

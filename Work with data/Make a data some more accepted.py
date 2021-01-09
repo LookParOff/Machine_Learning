@@ -9,8 +9,8 @@ letters = "АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ".low
 RUSSIAN_ALFABET = set(list(letters))
 
 
-file = open("data/War and peace all toms.txt", "r", encoding="UTF-8")
-fileWithImprovedData = open("data/Improved War and peace.txt", "w", encoding="UTF-8")
+file = open("../data/War and peace all toms.txt", "r", encoding="UTF-8")
+fileWithImprovedData = open("../data/Improved War and peace.txt", "w", encoding="UTF-8")
 
 for line in file:
     if len(line.split()) == 0:
