@@ -30,7 +30,7 @@ class Network:
         print("\n")
 
     def compute(self, inputActivation):
-        activation = inputActivation.copy()
+        activation = inputActivation  # maybe copy?
         for w, b in zip(self.weights, self.biases):
             z = np.reshape(np.dot(w, activation), (len(b), 1)) + b
             activation = sigmoid(z)
@@ -38,7 +38,7 @@ class Network:
 
     def evaluate(self, inputActivation):
         # inputActivation- input vector
-        activation = inputActivation.copy()
+        activation = inputActivation  # maybe copy?
         zs = []
         activations = [activation]
         for w, b in zip(self.weights, self.biases):
@@ -51,8 +51,8 @@ class Network:
     def evaluateOnMiniBatch(self, miniBatch, results, learningRate):
         nablaOfWeights = []
         nablaOfBias = []
-        arrForCalcAverageOfNablaW = []
-        arrForCalcAverageOfNablaB = []
+        resNablaW = [np.zeros(w.shape) for w in self.weights]
+        resNablaB = [np.zeros(b.shape) for b in self.biases]
         for inputActivation, result in zip(miniBatch, results):
             zs, activations = self.evaluate(inputActivation)
             delta = [self.derivativeOfCostFunc(result, activations[-1])]
@@ -64,25 +64,18 @@ class Network:
                 delta.append(np.matmul(np.transpose(self.weights[-l + 1]), delta[-1]) * sigmoid_prime(zs[-l]))
                 nablaOfWeights.append(delta[-1] * np.transpose(activations[-l - 1]))
                 nablaOfBias.append(delta[-1])
+
             nablaOfWeights = nablaOfWeights[::-1]
             nablaOfBias = nablaOfBias[::-1]
-            arrForCalcAverageOfNablaW.append(nablaOfWeights)
-            arrForCalcAverageOfNablaB.append(nablaOfBias)
-
-        resNablaW = [np.zeros(w.shape) for w in self.weights]
-        resNablaB = [np.zeros(b.shape) for b in self.biases]
-        # calc the average nabla
-        for nablaW in arrForCalcAverageOfNablaW:
-            for index, layer in enumerate(nablaW):
-                resNablaW[index] += layer
-        for nablaB in arrForCalcAverageOfNablaB:
-            for index, layer in enumerate(nablaB):
-                resNablaB[index] += layer
+            for index, nabla in enumerate(nablaOfWeights):
+                resNablaW[index] += nabla
+            for index, nabla in enumerate(nablaOfBias):
+                resNablaB[index] += nabla
 
         for index, _ in enumerate(resNablaW):
-            resNablaW[index] /= len(arrForCalcAverageOfNablaW)
+            resNablaW[index] /= len(miniBatch)
         for index, _ in enumerate(resNablaB):
-            resNablaB[index] /= len(arrForCalcAverageOfNablaB)
+            resNablaB[index] /= len(miniBatch)
 
         # correct the weights
         for index, nablaW in enumerate(resNablaW):
@@ -91,7 +84,7 @@ class Network:
             self.biases[index] -= nablaB * learningRate
         return 0
 
-    def train(self, train, trainAnswers, test=None, testAnswers=None, epochs=10, learningRate=0.1):
+    def train(self, train, trainAnswers, test=None, testAnswers=None, epochs=10, learningRate=0.1, lenOfBatch=32):
         # print("Random net generate a random shit:")
         # self.checkCorrectOfAnswer(test, testAnswers)
         startTimeTrain = time.time()
@@ -101,8 +94,6 @@ class Network:
             # np.random.shuffle(indices)
             # train = train[indices]
             # trainAnswers = trainAnswers[indices]
-
-            lenOfBatch = 100
             miniBatches = []
             batchesOfCorrectionData = []
             timeEpoch = time.time()

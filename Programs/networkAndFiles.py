@@ -2,7 +2,7 @@ import numpy as np
 
 
 def saveToFile(network, fileName):
-    file = open("NeuralNets\\" + fileName, "w")
+    file = open("..//NeuralNets/" + fileName, "w")
     for layer in network.weights:
         for wFromOneNeuron in layer:
             for w in wFromOneNeuron:
@@ -19,7 +19,7 @@ def saveToFile(network, fileName):
 
 
 def loadFromFile(network, fileName):
-    file = open("NeuralNets\\" + fileName, "r")
+    file = open("..//NeuralNets/" + fileName, "r")
     weights = [[]]
     biases = []
     isW = True
