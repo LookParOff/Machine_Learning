@@ -8,7 +8,7 @@ def generateData(startX, endX, step=0.1, spread=10, bias=0):
     x = np.arange(startX, endX, step)
     y = []
     for xi in x:
-        y.append(xi**2 / 10 + np.random.random()*spread + bias)
+        y.append(xi**3 + np.random.randint(-1, 2) * np.random.random()*spread + bias)
     y = np.array(y)
     return x, y
 
@@ -92,7 +92,9 @@ def linRegStochasticSquareFuncLoss(x, y):
 def linRegOfRazinkov(train, trainRes, M=2):
     # M- count of parameters of model
     # N- len(train)
-    basisFunctions = [lambda x: 1] + [lambda x: x**2 for _ in range(M-1)]
+    def getBasisFunc(degree):
+        return lambda x: x**degree
+    basisFunctions = [getBasisFunc(i) for i in range(M)]
     FI = lambda x: [func(x) for func in basisFunctions]
     matrixOfPlan = [FI(x) for x in train]
     matrixOfPlan = np.reshape(matrixOfPlan, (len(train), M))
@@ -106,18 +108,22 @@ def linRegOfRazinkov(train, trainRes, M=2):
 
 def getModel(train, trainRes, M):
     w, FI = linRegOfRazinkov(train, trainRes, M)
+    loss = 0
+    for i in range(len(train)):
+        loss += (trainRes[i] - np.dot(w.transpose(), FI(train[i])))**2
+    loss = loss / 2
+    print(M, "loss", loss)
     return lambda x: np.dot(w.transpose(), FI(x))
 
 
-x, y = generateData(0, 30, step=0.1, spread=15)
-# y = kx + b
-start = time.time()
-model = getModel(x, y, 2)  # debug on M=3
-k = 0
-b = 0
-print("time", time.time() - start)
-plt.scatter(x, y, 5)
+train, trainRes = generateData(0, 10, step=0.5, spread=125)
 
-plt.plot(x, [model(xi) for xi in x], color="black", linestyle="-", linewidth=2)
-plt.gca().set(xlim=(x[0]-5, x[-1]+5), ylim=(min(y)-5, max(y)+5))
+model = getModel(train, trainRes, 4)
+# model = getModel(train, trainRes, 3)
+
+plt.scatter(train, trainRes, 5)
+print([model(xi) for xi in np.arange(0, 25, 1)])
+plt.plot(train, [model(xi) for xi in train], color="black", linestyle="-", linewidth=2)
+# plt.gca().set(xlim=(train[0]-5, train[-1]+5), ylim=(min(trainRes)-5, max(trainRes)+5))
 plt.show()
+
