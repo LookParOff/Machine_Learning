@@ -89,7 +89,7 @@ def linRegStochasticSquareFuncLoss(x, y):
     return k, b
 
 
-def linRegOfRazinkov(train, trainRes, M=2):
+def linRegOfRazinkovWithRegularization(train, trainRes, M, koefOfReg=1000):
     # M- count of parameters of model
     # N- len(train)
     def getBasisFunc(degree):
@@ -98,32 +98,41 @@ def linRegOfRazinkov(train, trainRes, M=2):
     FI = lambda x: [func(x) for func in basisFunctions]
     matrixOfPlan = [FI(x) for x in train]
     matrixOfPlan = np.reshape(matrixOfPlan, (len(train), M))
+    I = np.array([[int(i == j) for j in range(len(matrixOfPlan[0]))] for i in range(len(matrixOfPlan[0]))])
     w = np.dot(
                 np.dot(
-                        np.linalg.inv(np.dot(matrixOfPlan.transpose(), matrixOfPlan)),
+                        np.linalg.inv(np.dot(matrixOfPlan.transpose(), matrixOfPlan) + I * koefOfReg),
                         matrixOfPlan.transpose()),
                 trainRes)
+    print(np.int32(w))
     return w, FI
 
 
-def getModel(train, trainRes, M):
-    w, FI = linRegOfRazinkov(train, trainRes, M)
+def getModel(train, trainRes, M, koefOfReg=0):
+    w, FI = linRegOfRazinkovWithRegularization(train, trainRes, M, koefOfReg)
     loss = 0
     for i in range(len(train)):
         loss += (trainRes[i] - np.dot(w.transpose(), FI(train[i])))**2
     loss = loss / 2
     print(M, "loss", loss)
+    print()
     return lambda x: np.dot(w.transpose(), FI(x))
 
 
-train, trainRes = generateData(0, 10, step=0.5, spread=125)
+train, trainRes = generateData(0, 10, step=0.5, spread=150)
+
+model = getModel(train, trainRes, 10)
+plt.scatter(train, trainRes, 5)
+plt.plot(train, [model(xi) for xi in train], color="black", linestyle="dotted", linewidth=2)
+# plt.gca().set(xlim=(train[0]-5, train[-1]+5), ylim=(min(trainRes)-5, max(trainRes)+5))
+
+model = getModel(train, trainRes, 10, koefOfReg=1000)
+plt.scatter(train, trainRes, 5)
+plt.plot(train, [model(xi) for xi in train], color="gray", linestyle="dashdot", linewidth=2)
+# plt.gca().set(xlim=(train[0]-5, train[-1]+5), ylim=(min(trainRes)-5, max(trainRes)+5))
 
 model = getModel(train, trainRes, 4)
-# model = getModel(train, trainRes, 3)
-
 plt.scatter(train, trainRes, 5)
-print([model(xi) for xi in np.arange(0, 25, 1)])
-plt.plot(train, [model(xi) for xi in train], color="black", linestyle="-", linewidth=2)
+plt.plot(train, [model(xi) for xi in train], color="blue", linestyle="solid", linewidth=2)
 # plt.gca().set(xlim=(train[0]-5, train[-1]+5), ylim=(min(trainRes)-5, max(trainRes)+5))
 plt.show()
-
