@@ -99,6 +99,9 @@ def linRegOfRazinkovWithRegularization(train, trainRes, M, koefOfReg=1000):
     matrixOfPlan = [FI(x) for x in train]
     matrixOfPlan = np.reshape(matrixOfPlan, (len(train), M))
     I = np.array([[int(i == j) for j in range(len(matrixOfPlan[0]))] for i in range(len(matrixOfPlan[0]))])
+    I[0][0] = 0
+    # we dont regularizate w0, because it's a bias, a bias maybe very big.
+    # It's not a problem, cos our selection maybe be on 1000 above the 0X
     w = np.dot(
                 np.dot(
                         np.linalg.inv(np.dot(matrixOfPlan.transpose(), matrixOfPlan) + I * koefOfReg),
@@ -119,7 +122,7 @@ def getModel(train, trainRes, M, koefOfReg=0):
     return lambda x: np.dot(w.transpose(), FI(x))
 
 
-train, trainRes = generateData(0, 10, step=0.5, spread=150)
+train, trainRes = generateData(0, 10, step=0.5, spread=150, bias=1000)
 
 model = getModel(train, trainRes, 10)
 plt.scatter(train, trainRes, 5)
@@ -131,7 +134,7 @@ plt.scatter(train, trainRes, 5)
 plt.plot(train, [model(xi) for xi in train], color="gray", linestyle="dashdot", linewidth=2)
 # plt.gca().set(xlim=(train[0]-5, train[-1]+5), ylim=(min(trainRes)-5, max(trainRes)+5))
 
-model = getModel(train, trainRes, 4)
+model = getModel(train, trainRes, 4, koefOfReg=1000)
 plt.scatter(train, trainRes, 5)
 plt.plot(train, [model(xi) for xi in train], color="blue", linestyle="solid", linewidth=2)
 # plt.gca().set(xlim=(train[0]-5, train[-1]+5), ylim=(min(trainRes)-5, max(trainRes)+5))
