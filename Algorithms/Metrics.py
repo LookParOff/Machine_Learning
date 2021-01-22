@@ -1,3 +1,6 @@
+import numpy as np
+
+
 def getMetrics(resultOfAlgorithm, answer):
     TP = 0  # Correct! First class
     TN = 0  # Correct! Zero class
@@ -15,6 +18,16 @@ def getMetrics(resultOfAlgorithm, answer):
     return TP, TN, FP, FN
 
 
+def getConfusionMatrix(resultOfAlgorithm, answer):
+    # resultOfAlgorithm- class of i object element in range [0, countOfClass+1] on opinion of algorithm
+    # answer- class of i object element in range [0, countOfClass+1] in reality
+    countOfClass = max(answer) + 1
+    confMat = np.zeros((countOfClass, countOfClass))
+    for res, answ in zip(resultOfAlgorithm, answer):
+        confMat[answ][res] += 1
+    return confMat
+
+
 def accuracyOfBinaryClassification(resultOfAlgorithm, answer):
     TP, TN, FP, FN = getMetrics(resultOfAlgorithm, answer)
     return (TP + TN) / len(resultOfAlgorithm)
@@ -29,8 +42,11 @@ def alfaBettaError(resultOfAlgorithm, answer):
 
 def getPrecisionAndRecall(resultOfAlgorithm, answer):
     TP, TN, FP, FN = getMetrics(resultOfAlgorithm, answer)
-    precision = TP / (TP + FP)  # which part algorithm recognize as 1 class and it's correct
-    recall = TP / (TP + FN)  # which part algorithm recognize as 1 class of all elements of 1 class
+    try:
+        precision = TP / (TP + FP)  # which part algorithm recognize as 1 class and it's correct
+        recall = TP / (TP + FN)  # which part algorithm recognize as 1 class of all elements of 1 class
+    except ZeroDivisionError:
+        return 0, -1
     return precision, recall
 
 
