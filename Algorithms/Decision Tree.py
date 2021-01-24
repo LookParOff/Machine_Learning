@@ -1,10 +1,12 @@
 import numpy as np
+import pandas as pd
+from Algorithms.Metrics import getPrecisionAndRecall, getFScore
 
 
 class Tree:
     def __init__(self):
         self.tau = 0
-        self.indexOfSearchCharacteristic = 0
+        self.indexOfSearchFeature = 0
         self.depth = 0
         self.leaf = False
         self.leafLabel = None
@@ -14,10 +16,10 @@ class Tree:
 
     def evaluate(self, x):
         if not self.leaf:
-            if x[self.indexOfSearchCharacteristic] > self.tau:
-                self.rightSon.evaluate(x)
+            if x[self.indexOfSearchFeature] < self.tau:
+                return self.leftSon.evaluate(x)
             else:
-                self.leftSon.evaluate(x)
+                return self.rightSon.evaluate(x)
         else:
             return self.leafLabel
 
@@ -37,10 +39,15 @@ class Tree:
         return self.leftSon
 
     def getRightSon(self):
-        return self.leftSon
+        return self.rightSon
 
-    # def __str__(self):
-    #     return self.leftSon.__str__() + "\n" + str(self.selection) + str(self.classes) + "\n" + self.rightSon.__str__()
+    def __str__(self):
+        printArray[self.depth].append((self.tau, self.indexOfSearchFeature))
+        self.leftSon.__str__()
+        self.rightSon.__str__()
+
+
+printArray = [[] for _ in range(100)]
 
 
 def getEntropy(Ni, classes):
@@ -57,68 +64,109 @@ def lossFunction(arrOfDirForEachX, classesForEachX):
     Ni = len(arrOfDirForEachX)
     Ni1 = np.count_nonzero(arrOfDirForEachX)
     Ni0 = len(arrOfDirForEachX) - Ni1
-    entropyOfSi0 = getEntropy(Ni0, classesForEachX)
-    entropyOfSi1 = getEntropy(Ni1, classesForEachX)
+
+    # entropyOfSi0 = Ni0 / Ni * np.log2(Ni0 / Ni+0.000001)
+    # entropyOfSi1 = Ni1 / Ni * np.log2(Ni1 / Ni+0.000001)
+    entropyOfSi0 = getEntropy(Ni, classesForEachX[arrOfDirForEachX == False])
+    entropyOfSi1 = getEntropy(Ni, classesForEachX[arrOfDirForEachX])
     result = Ni0 / Ni * entropyOfSi0 + Ni1 / Ni * entropyOfSi1
     return result
 
 
-def decisionTree(trainData, trainDataResult, edgeOfTree,
-                 numberOfFeature=1, maximumDepth=10, minPowerOfSelection=1, minEntropy=0.05):
+def decisionTree(trainData, trainDataResult, edgeOfTree, countOfClasses,
+                 numberOfFeature=1, maximumDepth=25, minPowerOfSelection=1, minEntropy=0.05):
     # depth- how deep tree can be
     # minCountOfSelection- if selection lower than this value- we make leaf
     # minEntropy- if Entropy we gain after split the selection lower than this value- we make leaf
     # numberOfFeature- how much Feature selection function will return to us parameters
     entropy = getEntropy(len(trainData), trainDataResult)
     print(entropy)
-    if edgeOfTree.depth > maximumDepth or len(trainData) < minPowerOfSelection or entropy < minEntropy:
+    if edgeOfTree.depth > maximumDepth or len(trainData) <= minPowerOfSelection or entropy < minEntropy:
         edgeOfTree.leaf = True
-        edgeOfTree.leafLabel = np.bincount(trainDataResult) / len(trainDataResult)
+        t = np.bincount(trainDataResult, minlength=countOfClasses)
+        edgeOfTree.leafLabel = t / len(trainDataResult)
         return
     countOfCharacteristic = len(trainData[0])
-    lossForCharacteristic = []
+    lossForEachFeature = []
     tauForCharacteristic = []
     for indexOfCharacteristic in range(countOfCharacteristic):
         xs = trainData[:, indexOfCharacteristic]
         allTau = np.arange(min(xs), max(xs), 0.1)  # all possible threshold values
+        if len(allTau) == 0:
+            # xs- array with just one characteristic
+            lossForEachFeature.append(np.nan)
+            tauForCharacteristic.append(np.nan)
+            continue
         w, v = np.meshgrid(xs, allTau)
-        arrayOfDirections = w > v  # direction left or right son
+        arrayOfDirections = w >= v  # direction left or right son
         # i element is how much of selection goes to the right son with allTau[i]
         # countOfRightElements = np.count_nonzero(arrayOfDirections, axis=1)
         allPossibleValuesLossFunctions = np.apply_along_axis(lossFunction, 1, arrayOfDirections, trainDataResult) # apply to each cols not to each element
         indexOfMinLoss = np.argmin(allPossibleValuesLossFunctions)  # index of tau with minimum loss
-        lossForCharacteristic.append(np.min(allPossibleValuesLossFunctions))
+        lossForEachFeature.append(np.min(allPossibleValuesLossFunctions))
         tauForCharacteristic.append(allTau[indexOfMinLoss])
-    indexOfSearchCharacteristic = np.argmin(lossForCharacteristic)
-    resultTau = tauForCharacteristic[indexOfSearchCharacteristic]
+    if len(np.argwhere(np.isnan(lossForEachFeature))) == len(lossForEachFeature):
+        # every feature vector consist of just one value
+        edgeOfTree.leaf = True
+        t = np.bincount(trainDataResult, minlength=countOfClasses)
+        edgeOfTree.leafLabel = t / len(trainDataResult)
+        return
+    indexOfFeature = np.nanargmin(lossForEachFeature)
+    resultTau = tauForCharacteristic[indexOfFeature]
+    if np.all(trainData[:, indexOfFeature] < resultTau) or np.all(trainData[:, indexOfFeature] >= resultTau):
+        # our tau does not change anything, all selection goes to the left or right. It's useless
+        edgeOfTree.leaf = True
+        t = np.bincount(trainDataResult, minlength=countOfClasses)
+        edgeOfTree.leafLabel = t / len(trainDataResult)
+        return
     edgeOfTree.tau = resultTau
-    edgeOfTree.indexOfSearchCharacteristic = indexOfSearchCharacteristic
+    edgeOfTree.indexOfSearchFeature = indexOfFeature
 
     edgeOfTree.createLeftSon()
-    decisionTree(trainData[trainData[:, indexOfCharacteristic] > resultTau], trainDataResult[np.nonzero(trainData > resultTau)[0]],
-                 edgeOfTree.getLeftSon(), numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy)
+    # print(trainDataResult[np.nonzero(trainData[:, indexOfCharacteristic] > resultTau)[0]])
+    decisionTree(trainData[trainData[:, indexOfFeature] < resultTau], trainDataResult[np.nonzero(trainData[:, indexOfFeature] < resultTau)[0]],
+                 edgeOfTree.getLeftSon(), countOfClasses, numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy)
 
     edgeOfTree.createRightSon()
-    decisionTree(trainData[trainData[:, indexOfCharacteristic] < resultTau], trainDataResult[np.nonzero(trainData < resultTau)[0]],
-                 edgeOfTree.getRightSon(), numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy)
+    decisionTree(trainData[trainData[:, indexOfFeature] >= resultTau], trainDataResult[np.nonzero(trainData[:, indexOfFeature] >= resultTau)[0]],
+                 edgeOfTree.getRightSon(), countOfClasses, numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy)
     return 0
 
 
 def trainDecisionTreeClassification(trainData, trainDataResult,
                                     numberOfFeature=1, maximumDepth=10, minPowerOfSelection=1, minEntropy=0.05):
     root = Tree()
-    decisionTree(trainData, trainDataResult, root, numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy)
+    countOfClasses = len(set(trainDataResult))
+    decisionTree(trainData, trainDataResult, root, countOfClasses, numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy)
     return root
 
 
-trainGenData = np.array([[np.random.random()*10], [np.random.random()*10],
-                         [np.random.random()*10], [np.random.random()*10],
-                         [np.random.random()*10], [np.random.random()*10],
-                         [np.random.random()*10], [np.random.random()*10],
-                         [np.random.random()*10], [np.random.random()*10]])
-trainGenDataResult = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-model = trainDecisionTreeClassification(trainGenData, trainGenDataResult)
-model.evaluate(trainGenData[0])
+# read CSV
+df = pd.read_csv("../Datasets/Titanic/train.csv")
+df["Sex"].replace("female", 0, inplace=True)
+df["Sex"].replace("male", 1, inplace=True)
+sex = np.reshape(list(df["Sex"]), (len(df["Sex"]), 1))
+Pclass = np.reshape(list(df["Pclass"]), (len(df["Pclass"]), 1))
+InputVectorsOfPeople = np.concatenate((sex, Pclass), axis=1)
+OutputClasses = np.array(df["Survived"], dtype=np.int32)
+model = trainDecisionTreeClassification(InputVectorsOfPeople, OutputClasses)
 
+resOfAlg = [np.argmax(model.evaluate(x)) for x in InputVectorsOfPeople]
+print("PRECISION and RECALL", getPrecisionAndRecall(resOfAlg, OutputClasses))
+print("F-SCORE", getFScore(resOfAlg, OutputClasses))
 
-# TODO print tree
+# make result CSV
+df = pd.read_csv("../Datasets/titanic/test.csv")
+df["Sex"].replace("female", 0, inplace=True)
+df["Sex"].replace("male", 1, inplace=True)
+sex = np.reshape(list(df["Sex"]), (len(df["Sex"]), 1))
+Pclass = np.reshape(list(df["Pclass"]), (len(df["Pclass"]), 1))
+InputVectorsOfPeople = np.concatenate((sex, Pclass), axis=1)
+
+outputlist = []
+for passId, man in zip(df["PassengerId"], InputVectorsOfPeople):
+    outputlist.append([passId, np.argmax(model.evaluate(man))])
+dfTest = pd.DataFrame(outputlist, columns=['PassengerId', 'Survived'])
+# dfTest.to_csv('submission.csv', index=False)
+print(dfTest)
+
