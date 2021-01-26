@@ -5,8 +5,8 @@ from Algorithms.Metrics import getPrecisionAndRecall, getFScore
 
 class Tree:
     def __init__(self):
-        self.tau = 0
-        self.indexOfSearchFeature = 0
+        self.tau = None
+        self.indexOfSearchFeature = None
         self.depth = 0
         self.leaf = False
         self.leafLabel = None
@@ -74,70 +74,63 @@ def lossFunction(arrOfDirForEachX, classesForEachX):
 
 
 def decisionTree(trainData, trainDataResult, edgeOfTree, countOfClasses,
-                 numberOfFeature=1, maximumDepth=25, minPowerOfSelection=1, minEntropy=0.05):
+                 numberOfFeature=1, maximumDepth=25, minPowerOfSelection=1, minEntropy=0.05, stepThreshold=0.05):
     # depth- how deep tree can be
     # minCountOfSelection- if selection lower than this value- we make leaf
     # minEntropy- if Entropy we gain after split the selection lower than this value- we make leaf
     # numberOfFeature- how much Feature selection function will return to us parameters
     entropy = getEntropy(len(trainData), trainDataResult)
     print(entropy)
-    if edgeOfTree.depth > maximumDepth or len(trainData) <= minPowerOfSelection or entropy < minEntropy:
+    isOneFeature = True
+    countOfCharacteristic = len(trainData[0])
+
+    for i in range(countOfCharacteristic):
+        if len(set(trainData[:, i])) != 1:
+            isOneFeature = False
+    if edgeOfTree.depth > maximumDepth or len(trainData) <= minPowerOfSelection or entropy < minEntropy or isOneFeature:
         edgeOfTree.leaf = True
         t = np.bincount(trainDataResult, minlength=countOfClasses)
         edgeOfTree.leafLabel = t / len(trainDataResult)
         return
-    countOfCharacteristic = len(trainData[0])
     lossForEachFeature = []
     tauForCharacteristic = []
     for indexOfCharacteristic in range(countOfCharacteristic):
         xs = trainData[:, indexOfCharacteristic]
-        allTau = np.arange(min(xs), max(xs), 0.1)  # all possible threshold values
+        allTau = np.arange(min(xs+stepThreshold), max(xs), stepThreshold)  # all possible threshold values
         if len(allTau) == 0:
             # xs- array with just one characteristic
             lossForEachFeature.append(np.nan)
             tauForCharacteristic.append(np.nan)
             continue
         w, v = np.meshgrid(xs, allTau)
-        arrayOfDirections = w >= v  # direction left or right son
-        # i element is how much of selection goes to the right son with allTau[i]
-        # countOfRightElements = np.count_nonzero(arrayOfDirections, axis=1)
-        allPossibleValuesLossFunctions = np.apply_along_axis(lossFunction, 1, arrayOfDirections, trainDataResult) # apply to each cols not to each element
+        arrayOfDirections = w >= v  # direction left or right son, False or True
+        # apply to each cols not to each element:
+        allPossibleValuesLossFunctions = np.apply_along_axis(lossFunction, 1, arrayOfDirections, trainDataResult)
         indexOfMinLoss = np.argmin(allPossibleValuesLossFunctions)  # index of tau with minimum loss
         lossForEachFeature.append(np.min(allPossibleValuesLossFunctions))
         tauForCharacteristic.append(allTau[indexOfMinLoss])
-    if len(np.argwhere(np.isnan(lossForEachFeature))) == len(lossForEachFeature):
-        # every feature vector consist of just one value
-        edgeOfTree.leaf = True
-        t = np.bincount(trainDataResult, minlength=countOfClasses)
-        edgeOfTree.leafLabel = t / len(trainDataResult)
-        return
+
     indexOfFeature = np.nanargmin(lossForEachFeature)
     resultTau = tauForCharacteristic[indexOfFeature]
-    if np.all(trainData[:, indexOfFeature] < resultTau) or np.all(trainData[:, indexOfFeature] >= resultTau):
-        # our tau does not change anything, all selection goes to the left or right. It's useless
-        edgeOfTree.leaf = True
-        t = np.bincount(trainDataResult, minlength=countOfClasses)
-        edgeOfTree.leafLabel = t / len(trainDataResult)
-        return
     edgeOfTree.tau = resultTau
     edgeOfTree.indexOfSearchFeature = indexOfFeature
 
     edgeOfTree.createLeftSon()
-    # print(trainDataResult[np.nonzero(trainData[:, indexOfCharacteristic] > resultTau)[0]])
     decisionTree(trainData[trainData[:, indexOfFeature] < resultTau], trainDataResult[np.nonzero(trainData[:, indexOfFeature] < resultTau)[0]],
-                 edgeOfTree.getLeftSon(), countOfClasses, numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy)
+                 edgeOfTree.getLeftSon(), countOfClasses, numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy, stepThreshold)
 
     edgeOfTree.createRightSon()
     decisionTree(trainData[trainData[:, indexOfFeature] >= resultTau], trainDataResult[np.nonzero(trainData[:, indexOfFeature] >= resultTau)[0]],
-                 edgeOfTree.getRightSon(), countOfClasses, numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy)
+                 edgeOfTree.getRightSon(), countOfClasses, numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy, stepThreshold)
     return 0
 
 
-def trainDecisionTreeClassification(trainData, trainDataResult,
-                                    numberOfFeature=1, maximumDepth=10, minPowerOfSelection=1, minEntropy=0.05):
+def trainDecisionTreeClassification(trainData, trainDataResult, numberOfFeature=1, maximumDepth=10,
+                                    minPowerOfSelection=1, minEntropy=0.05, stepThreshold=0.05):
     root = Tree()
     countOfClasses = len(set(trainDataResult))
-    decisionTree(trainData, trainDataResult, root, countOfClasses, numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy)
+    decisionTree(trainData, trainDataResult, root, countOfClasses, numberOfFeature, maximumDepth,
+                 minPowerOfSelection, minEntropy, stepThreshold)
     return root
 
 
@@ -168,5 +161,7 @@ for passId, man in zip(df["PassengerId"], InputVectorsOfPeople):
     outputlist.append([passId, np.argmax(model.evaluate(man))])
 dfTest = pd.DataFrame(outputlist, columns=['PassengerId', 'Survived'])
 # dfTest.to_csv('submission.csv', index=False)
-print(dfTest)
+# print(dfTest)
 
+model.__str__()
+print(printArray)
