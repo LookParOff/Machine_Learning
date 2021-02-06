@@ -1,6 +1,4 @@
 import numpy as np
-import pandas as pd
-from Algorithms.Metrics import getPrecisionAndRecall, getFScore
 
 
 class Tree:
@@ -26,13 +24,11 @@ class Tree:
     def createLeftSon(self):
         self.leftSon = Tree()
         self.leftSon.parent = self
-        # self.leftSon.tau = tau
         self.leftSon.depth = self.depth + 1
 
     def createRightSon(self):
         self.rightSon = Tree()
         self.rightSon.parent = self
-        # self.rightSon.tau = tau
         self.rightSon.depth = self.depth + 1
 
     def getLeftSon(self):
@@ -65,8 +61,6 @@ def lossFunction(arrOfDirForEachX, classesForEachX):
     Ni1 = np.count_nonzero(arrOfDirForEachX)
     Ni0 = len(arrOfDirForEachX) - Ni1
 
-    # entropyOfSi0 = Ni0 / Ni * np.log2(Ni0 / Ni+0.000001)
-    # entropyOfSi1 = Ni1 / Ni * np.log2(Ni1 / Ni+0.000001)
     entropyOfSi0 = getEntropy(Ni, classesForEachX[arrOfDirForEachX == False])
     entropyOfSi1 = getEntropy(Ni, classesForEachX[arrOfDirForEachX])
     result = Ni0 / Ni * entropyOfSi0 + Ni1 / Ni * entropyOfSi1
@@ -74,13 +68,13 @@ def lossFunction(arrOfDirForEachX, classesForEachX):
 
 
 def decisionTree(trainData, trainDataResult, edgeOfTree, countOfClasses,
-                 numberOfFeature=1, maximumDepth=25, minPowerOfSelection=1, minEntropy=0.05, stepThreshold=0.05):
+                 numberOfFeature, maximumDepth, minPowerOfSelection, minEntropy, stepThreshold):
     # depth- how deep tree can be
     # minCountOfSelection- if selection lower than this value- we make leaf
     # minEntropy- if Entropy we gain after split the selection lower than this value- we make leaf
     # numberOfFeature- how much Feature selection function will return to us parameters
     entropy = getEntropy(len(trainData), trainDataResult)
-    print(entropy)
+    # print(entropy)
     isOneFeature = True
     countOfCharacteristic = len(trainData[0])
 
@@ -126,42 +120,10 @@ def decisionTree(trainData, trainDataResult, edgeOfTree, countOfClasses,
 
 
 def trainDecisionTreeClassification(trainData, trainDataResult, numberOfFeature=1, maximumDepth=10,
-                                    minPowerOfSelection=1, minEntropy=0.05, stepThreshold=0.05):
+                                    minPowerOfSelection=20, minEntropy=0.05, stepThreshold=0.05):
     root = Tree()
     countOfClasses = len(set(trainDataResult))
     decisionTree(trainData, trainDataResult, root, countOfClasses, numberOfFeature, maximumDepth,
                  minPowerOfSelection, minEntropy, stepThreshold)
     return root
 
-
-# read CSV
-df = pd.read_csv("../Datasets/Titanic/train.csv")
-df["Sex"].replace("female", 0, inplace=True)
-df["Sex"].replace("male", 1, inplace=True)
-sex = np.reshape(list(df["Sex"]), (len(df["Sex"]), 1))
-Pclass = np.reshape(list(df["Pclass"]), (len(df["Pclass"]), 1))
-InputVectorsOfPeople = np.concatenate((sex, Pclass), axis=1)
-OutputClasses = np.array(df["Survived"], dtype=np.int32)
-model = trainDecisionTreeClassification(InputVectorsOfPeople, OutputClasses)
-
-resOfAlg = [np.argmax(model.evaluate(x)) for x in InputVectorsOfPeople]
-print("PRECISION and RECALL", getPrecisionAndRecall(resOfAlg, OutputClasses))
-print("F-SCORE", getFScore(resOfAlg, OutputClasses))
-
-# make result CSV
-df = pd.read_csv("../Datasets/titanic/test.csv")
-df["Sex"].replace("female", 0, inplace=True)
-df["Sex"].replace("male", 1, inplace=True)
-sex = np.reshape(list(df["Sex"]), (len(df["Sex"]), 1))
-Pclass = np.reshape(list(df["Pclass"]), (len(df["Pclass"]), 1))
-InputVectorsOfPeople = np.concatenate((sex, Pclass), axis=1)
-
-outputlist = []
-for passId, man in zip(df["PassengerId"], InputVectorsOfPeople):
-    outputlist.append([passId, np.argmax(model.evaluate(man))])
-dfTest = pd.DataFrame(outputlist, columns=['PassengerId', 'Survived'])
-# dfTest.to_csv('submission.csv', index=False)
-# print(dfTest)
-
-model.__str__()
-print(printArray)
