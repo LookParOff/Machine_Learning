@@ -64,13 +64,17 @@ printArray = [[] for _ in range(100)]
 def lossFunction(arrOfDirForEachX, valueOfRegressions):
     # arrOfDir- True or False for each element of selection, True or False means we go to the left or right son
     # Ni- len of current selection, which went to this edge
-    stdOnLeftSon = np.std(valueOfRegressions[arrOfDirForEachX == False])
-    stdOnRightSon = np.std(valueOfRegressions[arrOfDirForEachX])
-    result = (stdOnLeftSon + stdOnRightSon) / 2
+    selectionOfLeftSon = valueOfRegressions[arrOfDirForEachX == False]
+    selectionOfRightSon = valueOfRegressions[arrOfDirForEachX]
+    meanLeft = np.mean(selectionOfLeftSon)
+    meanRight = np.mean(selectionOfRightSon)
+    lossLeft = (abs(np.array(selectionOfLeftSon) - meanLeft)).sum() / len(selectionOfLeftSon)
+    lossRight = (abs(np.array(selectionOfRightSon) - meanRight)).sum() / len(selectionOfRightSon)
+    result = (lossLeft + lossRight) / 2
     return result
 
 
-def randomDecisionTree(trainData, trainDataResult, edgeOfTree, countOfClasses, koefOfRandom,
+def randomDecisionTree(trainData, trainDataResult, edgeOfTree, koefOfRandom,
                        maximumDepth, minPowerOfSelection, minDeviation):
     # depth- how deep tree can be
     # minCountOfSelection- if selection lower than this value- we make leaf
@@ -85,6 +89,7 @@ def randomDecisionTree(trainData, trainDataResult, edgeOfTree, countOfClasses, k
             isOneFeature = False
     if edgeOfTree.depth > maximumDepth or len(trainData) <= minPowerOfSelection or deviation < minDeviation or isOneFeature:
         edgeOfTree.leaf = True
+        tttt = np.std(trainDataResult)
         t = np.mean(trainDataResult)
         edgeOfTree.leafLabel = t
         return
@@ -119,13 +124,13 @@ def randomDecisionTree(trainData, trainDataResult, edgeOfTree, countOfClasses, k
     edgeOfTree.createLeftSon()
     randomDecisionTree(trainData[trainData[:, indexOfFeature] < resultTau],
                        trainDataResult[np.nonzero(trainData[:, indexOfFeature] < resultTau)[0]],
-                       edgeOfTree.getLeftSon(), countOfClasses, koefOfRandom,
+                       edgeOfTree.getLeftSon(), koefOfRandom,
                        maximumDepth, minPowerOfSelection, minDeviation)
 
     edgeOfTree.createRightSon()
     randomDecisionTree(trainData[trainData[:, indexOfFeature] >= resultTau],
                        trainDataResult[np.nonzero(trainData[:, indexOfFeature] >= resultTau)[0]],
-                       edgeOfTree.getRightSon(), countOfClasses, koefOfRandom,
+                       edgeOfTree.getRightSon(), koefOfRandom,
                        maximumDepth, minPowerOfSelection, minDeviation)
     return edgeOfTree
 
@@ -133,17 +138,19 @@ def randomDecisionTree(trainData, trainDataResult, edgeOfTree, countOfClasses, k
 def trainRandomDecisionTreeRegression(trainData, trainDataResult, koefOfRandom,
                                       maximumDepth=10, minPowerOfSelection=20, minDeviation=0.05):
     root = Tree()
-    countOfClasses = len(set(trainDataResult))
-    randomDecisionTree(trainData, trainDataResult, root, countOfClasses, koefOfRandom,
+    randomDecisionTree(trainData, trainDataResult, root, koefOfRandom,
                        maximumDepth, minPowerOfSelection, minDeviation)
     return root
 
 
 def trainRandomForestRegression(trainData, trainDataResult, koefOfRandom, countOfTrees,
-                                maximumDepth=10, minPowerOfSelection=20, minDeviation=0.05):
+                                maximumDepth=25, minPowerOfSelection=20, minDeviation=0.05):
     forest = RandomForest(countOfTrees)
     for i in range(countOfTrees):
         root = trainRandomDecisionTreeRegression(trainData, trainDataResult, koefOfRandom,
                                                  maximumDepth, minPowerOfSelection, minDeviation)
         forest.setTree(i, root)
     return forest
+
+
+np.insert([1,2,3], [0,0,0], axis=0)
