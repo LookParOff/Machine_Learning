@@ -60,5 +60,5 @@ def getMeanSquaredError(resultOfAlgorithm, answer):
     result = 0
     for alg, answ in zip(resultOfAlgorithm, answer):
         result += (answ - alg) ** 2
-    return result
+    return result / len(answer)
 
