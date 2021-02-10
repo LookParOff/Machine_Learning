@@ -55,3 +55,10 @@ def getFScore(resultOfAlgorithm, answer):
     F1 = 2 * (precision * recall) / (precision + recall)
     return F1
 
+
+def getMeanSquaredError(resultOfAlgorithm, answer):
+    result = 0
+    for alg, answ in zip(resultOfAlgorithm, answer):
+        result += (answ - alg) ** 2
+    return result
+
