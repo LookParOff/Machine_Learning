@@ -4,8 +4,10 @@ from PIL import Image
 
 
 def hougtTransformationCircles(stepTheta=0.0175*2):
-    def isPixelOnBorder(i_, j_):
+    def isPixelOnBorder(i_, j_, flagOfCorrectInput=True):
         nonlocal imageArr
+        if not flagOfCorrectInput:
+            return False
         px = imageArr[i_][j_]
         neiPx1 = imageArr[i_-1][j_]
         neiPx2 = imageArr[i_+1][j_]
@@ -40,26 +42,25 @@ def hougtTransformationCircles(stepTheta=0.0175*2):
     # a, b, r
     startCalc = time()
 
+    checkBorderVector = np.vectorize(isPixelOnBorder)
     for y in range(2, imageArr.shape[0] - 2):
         print(y)
         for x in range(2, imageArr.shape[1] - 2):
             # пробегаем все точки картинки и смотрим, а эта точка- граница меж двух объектов?
             if isPixelOnBorder(y, x):
-                # start search every line, what could be
-                for a in range(accumulateArray.shape[0]):
-                    for b in range(accumulateArray.shape[1]):
-                        r = round(np.sqrt((x - a)**2 + (y - b)**2))  # ???
-                        nextX = int(round(np.sqrt(abs(r**2 - (y + 1 - b)**2)) + a))
-                        prevX = int(round(np.sqrt(abs(r**2 - (y - 1 - b)**2)) + a))
-                        if nextX + 1 < imageArr.shape[0]:
-                            if isPixelOnBorder(y + 1, nextX):
-                                accumulateArray[a][b][int(r)] += 1
-                                pixelsWhichVoted[a][b][int(r)].add((x, y))
-                        if prevX + 1 < imageArr.shape[0]:
-                            if isPixelOnBorder(y - 1, prevX):
-                                accumulateArray[a][b][int(r)] += 1
-                                pixelsWhichVoted[a][b][int(r)].add((x, y))
-
+                allA, allB = np.meshgrid(np.arange(accumulateArray.shape[0]), np.arange(accumulateArray.shape[1]))
+                allR = np.round(np.sqrt((x - allA)**2 + (y - allB)**2))
+                allNextX = np.int32(np.round(np.sqrt(abs(allR**2 - (y + 1 - allB)**2)) + allA))
+                allPrevX = np.int32(np.round(np.sqrt(abs(allR ** 2 - (y - 1 - allB) ** 2)) + allA))
+                flagsOfCorrectPX1 = allNextX + 1 < imageArr.shape[0]
+                flagsOfCorrectPX2 = allPrevX + 1 < imageArr.shape[0]
+                voted = checkBorderVector([y + 1] * len(allNextX), allNextX, flagsOfCorrectPX1)
+                votedParametersA = allA[voted]
+                votedParametersB = allB[voted]
+                votedParametersR = allR[voted]
+                for a, b, r in zip(votedParametersA, votedParametersB, votedParametersR):
+                    accumulateArray[a][b][int(r)] += 1
+                    pixelsWhichVoted[a][b][int(r)].add((x, y))
     print("Votes calculated")
     maxVote = np.max(accumulateArray)
     print("maxVote", maxVote)
