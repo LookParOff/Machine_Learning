@@ -27,14 +27,14 @@ def hougtTransformationCircles():
             if 0 < yi < imageArr.shape[0] and 0 < xi < imageArr.shape[1]:
                 load.putpixel((xi, yi), (255, 0, 0))
 
-    load = Image.open("../Datasets/MyPicRecognition/Hough Circle0.png")
+    load = Image.open("../Datasets/MyPicRecognition/Hough Circle3.png")
     documentSize = (load.size[0]//1, load.size[1]//1)
     load = load.resize(documentSize)
     imageArr = list(load.getdata())
     if type(imageArr[0]) is not int:
         for y in range(len(imageArr)):
             imageArr[y] = int(0.2989 * imageArr[y][0] + 0.5870 * imageArr[y][1] + 0.1140 * imageArr[y][2])
-    imageArr = np.reshape(imageArr, documentSize)
+    imageArr = np.reshape(imageArr, documentSize[::-1])
     print(imageArr.shape)
     maxRadius = min(imageArr.shape[0], imageArr.shape[1])
     accumulateArray = np.zeros((imageArr.shape[0], imageArr.shape[1], maxRadius+1))
@@ -46,6 +46,8 @@ def hougtTransformationCircles():
 
     for x in range(2, imageArr.shape[0] - 2):
         print(x, end=";")
+        if x % 50 == 0:
+            print()
         for y in range(2, imageArr.shape[1] - 2):
             # пробегаем все точки картинки и смотрим, а эта точка- граница меж двух объектов?
             if isPixelOnBorder(x, y):
