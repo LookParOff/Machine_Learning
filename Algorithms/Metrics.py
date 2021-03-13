@@ -33,6 +33,14 @@ def accuracyOfBinaryClassification(resultOfAlgorithm, answer):
     return (TP + TN) / len(resultOfAlgorithm)
 
 
+def accuracyOfClassification(resultOfAlgorithm, answer):
+    correct = 0
+    for res, answ in zip(resultOfAlgorithm, answer):
+        if res == answ:
+            correct += 1
+    return correct / len(resultOfAlgorithm)
+
+
 def alfaBettaError(resultOfAlgorithm, answer):
     TP, TN, FP, FN = getMetrics(resultOfAlgorithm, answer)
     alfa = FP / (FP + TN)  # probability, that element of 0 class, algorithm recognize as 1 class
