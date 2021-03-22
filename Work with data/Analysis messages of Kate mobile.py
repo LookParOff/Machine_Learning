@@ -120,7 +120,8 @@ def getStatsAboutEmoji(listOfMessagesOfPerson, name="None"):
     usedEmoji = dict()
     for message in listOfMessagesOfPerson:
         for symbol in message:
-            if int("1F600", 16) <= ord(symbol) <= int("1F64F", 16):  # is symbol is emoji
+            if int("1F600", 16) <= ord(symbol) <= int("1F64F", 16) or ord(symbol) == 127773 or ord(symbol) == 127770:
+                # is symbol is emoji or emoji of moon
                 if usedEmoji.get(symbol) is None:
                     usedEmoji[symbol] = 1
                 else:
@@ -150,6 +151,10 @@ def getStatsAboutRussianSmile(listOfMessagesOfPerson, name="None"):  # )
     print()
 
 
+def plotMessagesOfHours(listOfMessagesOfPerson, name="None"):
+    return 0
+
+
 filePath = "../Datasets/private datasets/mesTatyana/FIX messages before 02.21.txt"
 dataOfMessages = parseTXT(filePath)
 # plotCountOfMessages(dataOfMessages)
@@ -158,8 +163,8 @@ dataOfMessages = parseTXT(filePath)
 # plotWordCloudOfMessages(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"],
 #                         "wordCloud Tatyana.jpeg")
 
-# getStatsAboutEmoji(dataOfMessages[dataOfMessages["Name"] == "Никита Луков"]["Message"], name="Никита Луков")
-# getStatsAboutEmoji(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"], name="Танюшка Баранова")
+getStatsAboutEmoji(dataOfMessages[dataOfMessages["Name"] == "Никита Луков"]["Message"], name="Никита Луков")
+getStatsAboutEmoji(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"], name="Танюшка Баранова")
 
-getStatsAboutRussianSmile(dataOfMessages[dataOfMessages["Name"] == "Никита Луков"]["Message"], name="Никита Луков")
-getStatsAboutRussianSmile(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"], name="Танюшка Баранова")
+# getStatsAboutRussianSmile(dataOfMessages[dataOfMessages["Name"] == "Никита Луков"]["Message"], name="Никита Луков")
+# getStatsAboutRussianSmile(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"], name="Танюшка Баранова")
