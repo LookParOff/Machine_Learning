@@ -1,5 +1,6 @@
 from wordcloud import WordCloud, STOPWORDS
 import matplotlib.pyplot as plt
+import plotly.express as px
 import seaborn as sns
 import pandas as pd
 import numpy as np
@@ -53,6 +54,22 @@ months = \
     "нояб.": '11',
     "дек.": '12'
 }
+
+
+def makeFixedFile():
+    # make one message in one row
+    fileInp = open("..//Datasets/private datasets/mesTatyana/messages before 02.21.txt", "r", encoding="UTF-8")
+    fileFixed = open("..//Datasets/private datasets/mesTatyana/FIX messages before 02.21.txt", "w", encoding="UTF-8")
+    attachments = False
+    for line in fileInp:
+        if len(line.strip()) == 0:
+            attachments = False
+            continue
+        if re.search("[а-яА-ЯёЁ]{3,} [а-яА-ЯёЁ]{3,} \(\d{1,2} .* \d{1,2}:\d{2}:\d{2} .{2}\):", line) is not None:
+            fileFixed.write("\n" + line.strip() + " ")
+        else:
+            fileFixed.write(line.strip() + " ")
+    print("end")
 
 
 def makeNumpyDate(dateInp="23 янв. 2020", deleteDay=True):
@@ -129,11 +146,10 @@ def getStatsAboutEmoji(listOfMessagesOfPerson, name="None"):
     dataOfEmojis = pd.DataFrame(usedEmoji.items())
     dataOfEmojis.columns = ["Emoji", "Count"]
     dataOfEmojis.sort_values("Count", inplace=True, ascending=False)
-    print(name + ":")
-    print(dataOfEmojis.head())
-    print(list(dataOfEmojis["Emoji"]))
-    print(list(dataOfEmojis["Count"]))
-    print()
+    print(dataOfEmojis)
+    fig = px.pie(dataOfEmojis, values="Count", names='Emoji')
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    fig.show()
     return 0
 
 
@@ -151,20 +167,44 @@ def getStatsAboutRussianSmile(listOfMessagesOfPerson, name="None"):  # )
     print()
 
 
-def plotMessagesOfHours(listOfMessagesOfPerson, name="None"):
+def plotMessagesOfHours(listOfMessagesOfPerson):
+    allTimeOfMessages = listOfMessagesOfPerson["Time"]
+    counts = [0 for _ in range(24 * 60)]
+    ticksForGraph = {'{:02}'.format(i // 60) + ":" + '{:02}'.format(i % 60): 0 for i in range(24 * 60)}
+    for time in allTimeOfMessages:
+        # time 11:38:14 ПП
+        timeList = time.split(":")
+        timeList = timeList[:-1] + timeList[-1].split(" ")
+        added12Hours = 0
+        if timeList[-1] == "ПП":  # after midday
+            added12Hours = 12
+        timeList = ((int(timeList[0]) % 12) + added12Hours, int(timeList[1]), int(timeList[2]))
+        counts[timeList[0] * 60 + timeList[1]] += 1
+        ticksForGraph[f"{timeList[0]:02}:{timeList[1]:02}"] += 1
+    ax = sns.lineplot(data=ticksForGraph)
+    ax.set(xticks=list(ticksForGraph.keys())[::130],
+           xlabel="время", ylabel="кол-во сообщений",
+           title="Распределение сообщений по времени суток")
+    # plt.xticks(rotation=90)
+    plt.show()
     return 0
 
 
 filePath = "../Datasets/private datasets/mesTatyana/FIX messages before 02.21.txt"
 dataOfMessages = parseTXT(filePath)
+# print(dataOfMessages.sample(5))
 # plotCountOfMessages(dataOfMessages)
 # plotWordCloudOfMessages(dataOfMessages[dataOfMessages["Name"] == "Никита Луков"]["Message"],
 #                         "wordCloud Nikita.jpeg")
 # plotWordCloudOfMessages(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"],
 #                         "wordCloud Tatyana.jpeg")
 
-getStatsAboutEmoji(dataOfMessages[dataOfMessages["Name"] == "Никита Луков"]["Message"], name="Никита Луков")
-getStatsAboutEmoji(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"], name="Танюшка Баранова")
+# getStatsAboutEmoji(dataOfMessages[dataOfMessages["Name"] == "Никита Луков"]["Message"], name="Никита Луков")
+# getStatsAboutEmoji(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"], name="Танюшка Баранова")
 
 # getStatsAboutRussianSmile(dataOfMessages[dataOfMessages["Name"] == "Никита Луков"]["Message"], name="Никита Луков")
-# getStatsAboutRussianSmile(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"], name="Танюшка Баранова")
+# getStatsAboutRussianSmile(dataOfMessages[dataOfMessages["Name"] == "Танюшка Баранова"]["Message"],
+#                                                                                           name="Танюшка Баранова")
+
+# plotMessagesOfHours(dataOfMessages[dataOfMessages["Date"] == np.datetime64("2020-02-01")])
+# plotMessagesOfHours(dataOfMessages)
