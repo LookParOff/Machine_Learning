@@ -31,7 +31,7 @@ def workWithBook() -> (pd.DataFrame, pd.DataFrame):
     # rawBooks = rawBooks[rawBooks["User-ID"].isin(users["User-ID"])]
     rawBooks = rawBooks[rawBooks["Book-Rating"] > 0]  # drop the useless zeros and nan
     countOfEveryBook = pd.value_counts(rawBooks["ISBN"])
-    countOfEveryBook = countOfEveryBook[countOfEveryBook > 7].index
+    countOfEveryBook = countOfEveryBook[countOfEveryBook > 12].index
     bRate = rawBooks[rawBooks["ISBN"].isin(countOfEveryBook)]  # filter, so books at least 10 people read
 
     bDescribe = pd.read_csv("../Datasets/book rate rec/BX_Books.csv", sep=";")
@@ -86,13 +86,26 @@ def error2(matrix, meanValuesUsers, meanValuesItems, numRows, numCols, P, Q):
     return e
 
 
+def error3(matrix, meanValuesUsers, meanValuesItems, numRows, numCols, P, Q, rk):
+    e = 0
+    for u, i in zip(numRows, numCols):
+        rui = matrix[u][i]
+        if not np.isnan(rui):
+            e += pow(rui - meanValuesUsers[u] - meanValuesItems[i] - np.dot(P[u, :], Q[:, i]), 2) + \
+                 rk * (np.sqrt(np.power(P[u, :], 2).sum()) + np.sqrt(np.power(Q[:, i], 2).sum()))
+    return e
+
+
 def getPrecisionAndRecall(algorithmValues, correctValues):
+    countOfEqualValues = 0
     TP = 0  # Recommended relevant
     TN = 0  # Didn't recommended irrelevant
     FP = 0  # Recommended irrelevant  (true_y=0 & pred_y=1)
     FN = 0  # Didn't recommended relevant
     threshold = np.mean([np.median(correctValues), np.max(correctValues)])  # third quartile
     for alg, corr in zip(algorithmValues, correctValues):
+        if abs(alg - corr) < 2.5:
+            countOfEqualValues += 1
         if alg >= threshold and corr >= threshold:
             TP += 1
         elif alg <= threshold and corr <= threshold:
@@ -105,22 +118,22 @@ def getPrecisionAndRecall(algorithmValues, correctValues):
         # probably in this task we need take care about precision, rather recall
         precision = TP / (TP + FP)  # which part algorithm recognize as 1 class, and it's correct
         recall = TP / (TP + FN)  # which part algorithm recognize as 1 class of all elements of 1 class
-        accuracy = (TP + TN) / len(correctValues)
+        accuracy = countOfEqualValues / len(correctValues)  # which part of algorithm we predict with precise accuracy
     except ZeroDivisionError:
         print(0, -1)
         accuracy, precision, recall = 0, 0, -1
     return accuracy, precision, recall
 
 
-def trainLFM(matrix: np.array, meanValuesUsers, meanValuesItems, steps, lr):
+def trainLFM(matrix: np.array, meanValuesUsers, meanValuesItems, steps, lr, rk):
     # Latent Factor Model https://youtu.be/J-QueLndVI8?t=2648
     # matrix- pivot matrix with rate on ij place. i- users and j- book
     # lr- learning rate
     # rk- regularization koef
     st = time()
-    K = 10  # features
-    P = np.random.random((matrix.shape[0], K))  # latent users
-    Q = np.random.random((K, matrix.shape[1]))  # latent books
+    features = 12
+    P = np.random.random((matrix.shape[0], features))  # latent users
+    Q = np.random.random((features, matrix.shape[1]))  # latent books
 
     numRows, numCols = np.where(~np.isnan(matrix))  # indexes of rows/cols, where values are not nan
     # make validation set:
@@ -139,7 +152,7 @@ def trainLFM(matrix: np.array, meanValuesUsers, meanValuesItems, steps, lr):
     for r, c in zip(validRows, validCols):
         algorithmValues.append(np.dot(P[r, :], Q[:, c]) + meanValuesUsers[r] + meanValuesItems[c])
 
-    rmse = np.sqrt(error2(matrix, meanValuesUsers, meanValuesItems, numRows, numCols, P, Q) / len(matrix))
+    rmse = np.sqrt(error3(matrix, meanValuesUsers, meanValuesItems, numRows, numCols, P, Q, rk) / len(matrix))
     accuracy, precision, recall = getPrecisionAndRecall(algorithmValues, correctValidValues)
     print(f"Without education: \n\tRMSE = {round(rmse, 2)}")
     print(f"\taccuracy = {round(accuracy, 2)}\n"
@@ -158,18 +171,16 @@ def trainLFM(matrix: np.array, meanValuesUsers, meanValuesItems, steps, lr):
             rui = matrix[u][i]
             if rui > 0:  # ?!
                 # TODO consider about weights
-                # TODO regularisation
-                #
+                # TODO MAE?
                 # https://towardsdatascience.com/evaluating-a-real-life-recommender-system-error-based-and-ranking-based-84708e3285b
-                # https://towardsdatascience.com/evaluating-recommender-systems-root-means-squared-error-or-mean-absolute-error-1744abc2beac
                 eui = rui - meanValuesUsers[u] - meanValuesItems[i] - np.dot(P[u, :], Q[:, i])
-                P[u, :] = P[u, :] + lr * eui * Q[:, i]
-                Q[:, i] = Q[:, i] + lr * eui * P[u, :]
+                P[u, :] = P[u, :] - lr * (eui * -Q[:, i] - rk * (P[u, :] / np.sqrt(np.power(P[u, :], 2).sum())))
+                Q[:, i] = Q[:, i] - lr * (eui * -P[u, :] - rk * (Q[:, i] / np.sqrt(np.power(Q[:, i], 2).sum())))
 
         if step % check == 0:
             print(f"Step {step}:")
             pastRmse = rmse
-            rmse = np.sqrt(error2(matrix, meanValuesUsers, meanValuesItems, numRows, numCols, P, Q) / len(matrix))
+            rmse = np.sqrt(error3(matrix, meanValuesUsers, meanValuesItems, numRows, numCols, P, Q, rk) / len(matrix))
             print(f"\tRSME = {round(rmse, 3)}."
                   f" Shift per step = {round((pastRmse - rmse) / check, 4)}")
             if (pastRmse - rmse) / check < 0.003:  # next iteration is almost useless
@@ -212,6 +223,7 @@ def getRecommendation(trainedModel, userId, matrixR: pd.DataFrame, meanOfUser, m
     threshold = np.mean([np.median(ratings), np.max(ratings)])  # third quartile
     recommendedTitles = recommendedTitles[ratings > threshold]
     ratings = ratings[ratings > threshold]
+    # recs[0]["Harry" in recs[0]]
     return recommendedTitles, ratings
 
 
@@ -226,6 +238,7 @@ if __name__ == "__main__":
 
     t = time()
     matrixOfRating = pd.pivot_table(booksRate, values="Book-Rating", index="User-ID", columns="ISBN")
+    print("mean", np.nanmean(booksRate["Book-Rating"]), "median", np.nanmedian(booksRate["Book-Rating"]))
     # instead of isbn there are will be the title of books:
     newColumns = []
     for col in matrixOfRating.columns:
@@ -268,7 +281,7 @@ if __name__ == "__main__":
     # mean values for users and item. Made it for optimisation purpose
     meanValuesUsers = np.nanmean(matNp, axis=1)
     meanValuesItems = np.nanmean(matNp, axis=0)
-    model = trainLFM(matNp, meanValuesUsers, meanValuesItems, steps=100, lr=0.01)
+    model = trainLFM(matNp, meanValuesUsers, meanValuesItems, steps=150, lr=0.004, rk=0.01)
     algValues = []
     for r, c in zip(testRows, testCols):
         algValues.append(model(r, c) + meanValuesUsers[r] + meanValuesItems[c])
@@ -279,3 +292,10 @@ if __name__ == "__main__":
     # todo add test users. They read only Harry Potter without one book
     recs = getRecommendation(model, 82825, matrixOfRating,
                              meanValuesUsers[np.where(matrixOfRating.index == 82825)[0][0]], meanValuesItems)
+    # correlation of features and precision: there are not so much effect on precision if we change count of features
+    # mean value of algValues = 8.7 in all times
+    # 03- 0.49
+    # 06- 0.49
+    # 12- 0.50
+    #
+
