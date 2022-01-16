@@ -35,5 +35,6 @@ def k_means(vectors: np.array, countOfClusters):
     return centroids
 
 
-print(k_means(np.array([[1, 1], [2, 2], [5, 5], [6, 6]]), 2))
-print(k_means(np.array([1, 1.1, 1.2, 50, 50.1, 50.2]), 2))
+if __name__ == "__main__":
+    print(k_means(np.array([[1, 1], [2, 2], [5, 5], [6, 6]]), 2))
+    print(k_means(np.array([1, 1.1, 1.2, 50, 50.1, 50.2]), 2))

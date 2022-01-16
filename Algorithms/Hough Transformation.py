@@ -31,7 +31,7 @@ def hougtTransformation(stepTheta=0.0175*2):
             if 0 < yi < imageArr.shape[0] and 0 < xi < imageArr.shape[1]:
                 load.putpixel((xi, yi), (255, 0, 0))
 
-    load = Image.open("C:\\Hough SQUARE.png")
+    load = Image.open("..//Datasets/MyPicRecognition/Hough krestiki.png")
     documentSize = (load.size[0]//1, load.size[1]//1)
     load = load.resize(documentSize)
     print(load.size)
@@ -62,29 +62,12 @@ def hougtTransformation(stepTheta=0.0175*2):
         for j in range(2, imageArr.shape[1] - 2):
             # пробегаем все точки картинки и смотрим, а эта точка- граница меж двух объектов?
             if isPixelOnBorder(i, j):
-                # start search every line, what could be
                 for theta in thetas:
                     # j = column = x
-                    ro = j*np.cos(theta) + i*np.sin(theta)
-                    # now see is line theta and ro match with line on image
-                    # will see next column j+1 the row (ro / sin(theta) - x*ctg(theta))
-
-                    y = int(round(ro / np.sin(theta) - (j+1)*(1/np.tan(theta)), 0))
-                    # print(y, end="|")
-                    if not 0 < y < imageArr.shape[0] - 1:
-                        # y coord in next column is not in image, that's mean line is about vertical
-                        x = int(round(ro / np.cos(theta) - (i + 1) * np.tan(theta), 0))  # coord of next pixel on the line
-                        if isPixelOnBorder(i + 1, x):
-                            ro = int(round(ro, 0))
-                            indexTheta = np.where(thetas == theta)[0][0]
-                            accumulateArray[ro][indexTheta] += 1
-                            pixelsWhichVoted[ro][indexTheta].add((x, i))
-                    else:
-                        if isPixelOnBorder(y, j + 1):
-                            ro = int(round(ro, 0))
-                            indexTheta = np.where(thetas == theta)[0][0]
-                            accumulateArray[ro][indexTheta] += 1
-                            pixelsWhichVoted[ro][indexTheta].add((j, y))
+                    ro = int(round(j*np.cos(theta) + i*np.sin(theta)))
+                    indexTheta = np.where(thetas == theta)[0][0]
+                    accumulateArray[ro][indexTheta] += 1
+                    pixelsWhichVoted[ro][indexTheta].add((j, i))
 
     print("Votes calculated")
     maxVote = np.max(accumulateArray)
