@@ -19,7 +19,6 @@ def is_str_correct(text, alphabet):
 
 def preprocess_data(path) -> pd.Series:
     """returns preprocessed and cleaned data"""
-    # alphabet = set("абвгдеёжзийклмнопрстуфхцчшщъыьэюя АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ ' ")
     alphabet = set("aAaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz '")
     # alphabet.update('0123456789.,!?()-–—«» " ')
     data = pd.read_table(path, header=None, delimiter=r"\n", engine="python")
@@ -142,7 +141,7 @@ class NLPerceptron(torch.nn.Module):
         return self.count_of_classes
 
 
-def similarity(word, matrix):
+def similarity(word, matrix, word2ind, ind2word):
     """
     Find the most similar words by trained weights of model
     """
@@ -178,9 +177,7 @@ def fit(model, epochs, loss_func, opt, train):
     return model
 
 
-if __name__ == "__main__":
-    device = torch.device("cuda:0")
-    # device = torch.device("cpu")
+def main():
     # quotes = preprocess_data(
     #     r"C:\Users\Norma\PycharmProjects\Machine Learning\Datasets\Amazing quotes\tagged.txt")
     # aneks, denied_aneks = preprocess_data(
@@ -188,7 +185,7 @@ if __name__ == "__main__":
     # )
     reviews = preprocess_data(
     r"C:\Users\Norma\PycharmProjects\Machine Learning\Datasets\text reviews of films\reviews.txt")
-    data = reviews[:3000]
+    data = reviews[:]
     print("Count of quotes:", data.shape, end="\t")
     word2ind, ind2word = vocabulary_of_all_words(data)
     print("Count of unique words:", len(word2ind))
@@ -203,13 +200,33 @@ if __name__ == "__main__":
     path_of_save = r"C:\Users\Norma\PycharmProjects\Machine Learning\Saved_models"
     print("START TRAINING!")
     learning_rate = 0.01
-    for _ in range(3):
+    for _ in range(0):
         optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
         epochs = 16
         net = fit(net, epochs, loss_fn, optimizer, train_dl)
         learning_rate = learning_rate / 100
         torch.save(net.state_dict(), fr"{path_of_save}\{name}.pt")
-    similarity("good", net.linear1.weight.T.data)
-    similarity("bad", net.linear1.weight.T.data)
-    similarity("man", net.linear1.weight.T.data)
-    similarity("woman", net.linear1.weight.T.data)
+    return net
+
+
+def load_model():
+    net = NLPerceptron(74072)
+    net.load_state_dict(
+        torch.load(r"C:\Users\Norma\PycharmProjects\Machine Learning\Saved_models\_model2.pt"))
+    # To escape from this unnecessary saved files need to add in class NLPerceptron ind2word
+    df_ind2word = pd.read_csv(
+        r"C:\Users\Norma\PycharmProjects\Machine Learning\Saved_models\ind2word.csv")
+    ind2word_ = df_ind2word.to_dict()
+    ind2word_ = ind2word_["Unnamed: 0"]
+    word2ind_ = dict([(val, key) for key, val in zip(ind2word_.keys(), ind2word_.values())])
+    return net, word2ind_, ind2word_
+
+
+if __name__ == "__main__":
+    device = torch.device("cuda:0")
+    # device = torch.device("cpu")
+    model, word2ind, ind2word = load_model()
+    similarity("good", model.linear1.weight.T.data, word2ind, ind2word)
+    similarity("bad", model.linear1.weight.T.data, word2ind, ind2word)
+    similarity("man", model.linear1.weight.T.data, word2ind, ind2word)
+    similarity("woman", model.linear1.weight.T.data, word2ind, ind2word)
