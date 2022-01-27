@@ -14,9 +14,11 @@ class EvolutionNet:
         self.hidden = 50
         self.output = 10
         self.relu = torch.nn.ReLU()
-        self.softmax = torch.nn.Softmax()
-        self.linear1 = torch.rand((self.input, self.hidden), device=device)
-        self.linear2 = torch.rand((self.hidden, self.output), device=device)
+        self.sigmoid = torch.nn.Sigmoid()
+        self.softmax = torch.nn.Softmax(dim=1)
+        # specific initialisation for activation relu
+        self.linear1 = 0.2 * torch.rand((self.input, self.hidden), device=device) - 0.1
+        self.linear2 = 0.2 * torch.rand((self.hidden, self.output), device=device) - 0.1
 
     def mutate(self):
         self.linear1 += torch.normal(mean=self.mean, std=self.std,
@@ -57,29 +59,40 @@ def get_data_loaders(x, y):
     train_dataset = TensorDataset(x_train, y_train)
     test_dataset = TensorDataset(x_test, y_test)
 
-    train_data_loader = DataLoader(train_dataset, batch_size=x_train.shape[0], shuffle=True)
+    train_data_loader = DataLoader(train_dataset, batch_size=512, shuffle=True)
     test_data_loader = DataLoader(test_dataset, batch_size=y_test.shape[0])
     return train_data_loader, test_data_loader
 
 
-def fit(population: np.array, epochs, loss_func, train_dl, test_dl):
+def fit(population: np.array, epochs, loss_func, train_dl, test_dl, descending=False):
+    # if we need minimize loss_func- descending should be True
+    print(train_dl.dataset.tensors[1].shape, test_dl.dataset.tensors[1].shape)
     num_of_bests = 10  # how many of the best species do we take from the population
     best_species = None  # the best species of the population
     result = torch.zeros(len(population), dtype=torch.float32)
-    x, y = train_dl.dataset.tensors[0], train_dl.dataset.tensors[1]
+    accuracy = Accuracy().to(device)
+    start = time()
     for epoch in range(epochs):
-        start = time()
-        for id_specie, specie in enumerate(population):
-            y_predict = specie(x)
-            loss = loss_func(y_predict, y)
-            result[id_specie] = loss.item()
-        best_ids = torch.argsort(result)[:num_of_bests]  # chosen the bests
-        best_species = population[best_ids]
-        for id_specie, specie in enumerate(population):
-            population[id_specie] = best_species[id_specie % num_of_bests].__deepcopy__()
-            if id_specie > num_of_bests:
-                population[id_specie].mutate()
-        print(f"№{epoch} end in {round(time() - start)}secs. Best is {result[best_ids[0]].item()}")
+        for x, y in train_dl:
+            for id_specie, specie in enumerate(population):
+                y_predict = specie(x)
+                loss = loss_func(y_predict, y)
+                result[id_specie] = loss.item()
+            best_ids = torch.argsort(result, descending=descending)[:num_of_bests]  # chosen the bests
+            best_species = population[best_ids]
+            for id_specie, specie in enumerate(population):
+                population[id_specie] = best_species[id_specie % num_of_bests].__deepcopy__()
+                if id_specie > num_of_bests:
+                    population[id_specie].mutate()
+        if epoch % 10 == 0:
+            x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
+            y_predict = best_species[0](x_test)
+            loss = round(loss_func(y_predict, y_test).item(), 5)
+            acc = round(accuracy(y_predict, y_test).item(), 3)
+            print(f"№{epoch} end in {round(time() - start)}secs. "
+                  f"Loss = {loss}. "
+                  f"Acc = {acc}")
+            start = time()
     return best_species
 
 
@@ -92,12 +105,12 @@ def main():
     input_shape = x.shape[1]
     train_dl, test_dl = get_data_loaders(x, y)
 
+    # loss_fn = Accuracy().to(device)
     loss_fn = torch.nn.CrossEntropyLoss()
-
     print("START TRAINING!")
-    epochs = 200
-    len_of_population = 1000
-    mutation_parameters = (0, 0.7)  # mean and std
+    epochs = 70 + 1
+    len_of_population = 100
+    mutation_parameters = (0, 0.3)  # mean and std
     population = np.array([EvolutionNet(input_shape, mutation_parameters)
                            for _ in range(len_of_population)])
     arr_of_nets = fit(population, epochs, loss_fn, train_dl, test_dl)
