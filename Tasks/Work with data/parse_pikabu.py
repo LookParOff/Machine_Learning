@@ -61,18 +61,16 @@ def load_page_by_date(start_date, end_date):
 
 
 def parse_post(post, swipe_side):
+    link = post.find_element(By.CLASS_NAME, "story__title-link").get_attribute("href")
     nick = post.find_element(By.CLASS_NAME,
                              "story__user-link.user__nick").get_attribute("data-name")
     if nick == "specials":
-        return ""
-    try:
-        # in case there are no views
+        return link
+    try:  # in case there are no views
         views = post.find_element(By.CLASS_NAME, "story__views.hint").text
     except NoSuchElementException:
         views = 0
     title = post.find_element(By.CLASS_NAME, "story__title-link").text
-    print(title)
-    link = post.find_element(By.CLASS_NAME, "story__title-link").get_attribute("href")
     post_id = link[link.rfind("_") + 1:]
     tags = post.find_element(By.CLASS_NAME, "story__tags.tags").text
     post_time = post.find_element(By.TAG_NAME, "time").get_attribute("datetime")
@@ -94,31 +92,29 @@ def get_data_frame_of_site(sleep_secs, date_range):
     added_posts = set()
 
     for start_date, end_date in date_range:
-        # try:
-            print(start_date, end_date)
+        try:
+            print(start_date, end_date, end=" ")
             # load page with post, which was posted in range start and end dates
             load_page_by_date(start_date, end_date)
             while True:
                 posts = driver.find_elements(By.XPATH, "//div[@class='story__main']")
                 swipe_sides = driver.find_elements(By.XPATH, "//div[@class='story__left ']")
-                print("before change", len(posts), len(swipe_sides))
                 displayed_posts = [
                     p.find_element(By.CLASS_NAME, "story__title-link").get_attribute("href")
                     not in added_posts for p in posts]
                 if True not in displayed_posts:  # everything we already saw
-                    print("We reach end of the page")
+                    print(len(added_posts), "We reach end of the page", time.asctime())
                     break
                 start_ind = displayed_posts.index(True)
                 posts = posts[start_ind:]  # start with post, which we didn't see
                 swipe_sides = swipe_sides[start_ind:]
-                print("after change", len(posts), len(swipe_sides))
                 for post, swipe_side in zip(posts, swipe_sides):
                     link = parse_post(post, swipe_side)
                     added_posts.add(link)
                     wait(sleep_secs[0], sleep_secs[1])
                     swipe_side.click()
                     wait(0.1, 0.5)  # just little wait in case of loading something
-        # except:
+        except:
             print("Fuck! Something goes wrong")
             driver.save_screenshot(f"D:\\{time.asctime()}_{len(data)}.png")
 
@@ -189,15 +185,14 @@ if __name__ == "__main__":
     driver.find_element(By.CLASS_NAME, "button_success.button_width_100").click()  # click submit
     time.sleep(15)  # maybe need insert captcha
 
-    dates = split_on_weeks("01/09/21", "02/02/22", 5)  # in 2 hours ~ 3.5 months; in 4 ~ 4.5
-    # in ~4.5 hours parsed 4875 posts. sleep_secs=(1, 4)
-    # mean 3.323 on one post. And we weren't kicked from server :)
+    dates = split_on_weeks("01/01/20", "02/02/22", 10)
     data = []
-    df = get_data_frame_of_site((1, 4), dates)
+    df = get_data_frame_of_site((0.75, 1.75), dates)
     df.columns = ["post_id", "title", "nick",
                   "views", "rating", "count_comments",
                   "tags", "link", "post_time"]
     driver.quit()
     df.replace(";", ".", inplace=True)
-    df.to_csv(r"C:\Users\Norma\PycharmProjects\Machine Learning\Datasets\pikabu\dogs01.21_02.22csv",
+    df.to_csv(r"C:\Users\Norma\PycharmProjects\Machine "
+              r"Learning\Datasets\pikabu\dog 01.20_12.20.csv",
               sep=";", encoding="UTF-8")
