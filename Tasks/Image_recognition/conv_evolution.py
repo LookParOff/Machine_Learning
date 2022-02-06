@@ -11,41 +11,37 @@ class ConvEvolution(torch.nn.Module):
         super().__init__()
         self.mean, self.std = mutation_param
         self.relu = torch.nn.ReLU()
-        self.softmax = torch.nn.Softmax()
+        self.softmax = torch.nn.Softmax(dim=1)
         self.max_pool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv1 = torch.nn.Conv2d(1, 32, kernel_size=(5, 5), stride=(2, 2), padding=2)
-        self.linear1 = torch.nn.Linear(7 * 7 * 32, 10)
+        self.dropout = torch.nn.Dropout(0.5)
+        self.conv1 = torch.nn.Conv2d(1, 32, kernel_size=(5, 5), stride=(1, 1), padding=2,
+                                     device=device)
+        self.conv2 = torch.nn.Conv2d(32, 64, kernel_size=(5, 5), stride=(1, 1), padding=2,
+                                     device=device)
+        self.linear1 = torch.nn.Linear(7 * 7 * 64, 1000, device=device)
+        self.linear2 = torch.nn.Linear(1000, 10, device=device)
 
     def forward(self, x):
         x = self.max_pool(self.relu(self.conv1(x)))
+        x = self.max_pool(self.relu(self.conv2(x)))
         x = x.reshape(x.size(0), -1)
-        x = self.softmax(self.linear1(x))
+        x = self.relu(self.linear1(x))
+        x = self.softmax(self.linear2(x))
         return x
 
     def mutate(self):
         self.conv1.weight += torch.normal(mean=self.mean, std=self.std,
                                           size=self.conv1.weight.shape, device=device)
-        # self.conv2.weight += torch.normal(mean=self.mean, std=self.std,
-        #                                   size=self.conv2.weight.shape, device=device)
+        self.conv2.weight += torch.normal(mean=self.mean, std=self.std,
+                                          size=self.conv2.weight.shape, device=device)
         self.linear1.weight += torch.normal(mean=self.mean, std=self.std,
                                             size=self.linear1.weight.shape, device=device)
-        # self.linear2.weight += torch.normal(mean=self.mean, std=self.std,
-        #                                     size=self.linear2.weight.shape, device=device)
+        self.linear2.weight += torch.normal(mean=self.mean, std=self.std,
+                                            size=self.linear2.weight.shape, device=device)
 
     def clone(self):
-        copy_net = ConvEvolution((self.mean, self.std)).to(device=device)
-        # copy_net.conv1.weight = self.conv1.weight.clone()
-        # copy_net.conv2.weight = self.conv2.weight.clone()
-        # copy_net.linear1.weight = self.linear1.weight.clone()
-        # copy_net.linear2.weight = self.linear2.weight.clone()
-
-        # copy_net.conv1 = self.conv1
-        # copy_net.conv2 = self.conv2
-        # copy_net.linear1 = self.linear1
-        # copy_net.linear2 = self.linear2
-
+        copy_net = ConvEvolution((self.mean, self.std))
         copy_net.load_state_dict(self.state_dict())
-
         return copy_net
 
 
@@ -63,7 +59,7 @@ def parse_data(path):
 
 
 def get_data_loaders(x, y):
-    percentOfSplit = 0.10
+    percentOfSplit = 0.15
     x_train = x[:x.shape[0] - int(x.shape[0] * percentOfSplit), :]
     y_train = y[:y.shape[0] - int(y.shape[0] * percentOfSplit)]
     x_test = x[x.shape[0] - int(x.shape[0] * percentOfSplit):, :]
