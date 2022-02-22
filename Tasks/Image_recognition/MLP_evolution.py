@@ -47,11 +47,21 @@ def get_gauss_kernel(size, sigma):
     return kernel
 
 
-def convolution2d(a, f):
-    s = f.shape + tuple(np.subtract(a.shape, f.shape) + 1)
+def median_kernel(mat, size, padding=0):
+    pad_matrix = np.pad(mat, padding)
+    res_a = np.zeros((pad_matrix.shape[0] - size//2 * 2, pad_matrix.shape[1] - size//2 * 2))
+    for i_ in range(res_a.shape[0]):
+        for j_ in range(res_a.shape[1]):
+            res_a[i_, j_] = np.median(pad_matrix[i_:i_ + size, j_:j_ + size])
+    return res_a
+
+
+def convolution2d(mat, filter_kernel, padding=0):
+    pad_matrix = np.pad(mat, padding)
+    s = filter_kernel.shape + tuple(np.subtract(pad_matrix.shape, filter_kernel.shape) + 1)
     strd = np.lib.stride_tricks.as_strided
-    subM = strd(a, shape=s, strides=a.strides * 2)
-    return np.einsum('ij,ijkl->kl', f, subM)
+    subM = strd(pad_matrix, shape=s, strides=pad_matrix.strides * 2)
+    return np.einsum('ij,ijkl->kl', filter_kernel, subM)
 
 
 def parse_data(path):
@@ -97,7 +107,14 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
     result = torch.zeros(len(population), dtype=torch.float32)
     accuracy = Accuracy().to(device)
     start = time()
+
+    # blur_kernel = get_gauss_kernel(3, 0.3)
     for epoch in range(epochs):
+        if epoch % 5 == 0:
+            for specie in population:
+                blured_weight = median_kernel(specie.linear1.weight.cpu().numpy(), 3, 1)
+                blured_weight = torch.tensor(blured_weight, dtype=torch.float32, device=device)
+                specie.linear1.weight = torch.nn.Parameter(blured_weight)
         for x, y in train_dl:
             for id_specie, specie in enumerate(population):
                 y_predict = specie(x)
@@ -148,7 +165,7 @@ def main():
     # loss_fn = Accuracy().to(device)
     loss_fn = torch.nn.CrossEntropyLoss()
     print("START TRAINING!")
-    epochs = 10 + 1
+    epochs = 50 + 1
     len_of_population = 20
     mutation_parameters = (0, 0.001)  # mean and std
     population = np.array([MLP(input_shape, 10)
@@ -195,5 +212,4 @@ if __name__ == "__main__":
     )]
 
     fig.layout.sliders = sliders
-
     fig.show()
