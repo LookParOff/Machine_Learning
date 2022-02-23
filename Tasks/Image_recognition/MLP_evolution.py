@@ -110,11 +110,11 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
 
     # blur_kernel = get_gauss_kernel(3, 0.3)
     for epoch in range(epochs):
-        if epoch % 5 == 0:
-            for specie in population:
-                blured_weight = median_kernel(specie.linear1.weight.cpu().numpy(), 3, 1)
-                blured_weight = torch.tensor(blured_weight, dtype=torch.float32, device=device)
-                specie.linear1.weight = torch.nn.Parameter(blured_weight)
+        # if epoch % 5 == 0:
+        #     for specie in population:
+        #         blured_weight = median_kernel(specie.linear1.weight.cpu().numpy(), 3, 1)
+        #         blured_weight = torch.tensor(blured_weight, dtype=torch.float32, device=device)
+        #         specie.linear1.weight = torch.nn.Parameter(blured_weight)
         for x, y in train_dl:
             for id_specie, specie in enumerate(population):
                 y_predict = specie(x)
@@ -130,12 +130,22 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
                     population[id_specie].mutate(mean, std)
 
         # save loss
-        history_of_fittness.append(result[0].item())
+        # history_of_fittness.append(result[0].item())
+        history_of_fittness.append(0)
         # plotting graphs
         fig.add_trace(go.Scatter(x=list(range(len(history_of_fittness))), y=history_of_fittness),
                       row=4, col=1)
         row, col = 1, 1
-        w = population[0].linear1.weight.detach().cpu().numpy()  # weight
+
+        agr_model = MLP(784, 10)
+        agr_model.linear1.weight = torch.nn.Parameter(torch.zeros((10, 784),
+                                                                  device=device,
+                                                                  dtype=torch.float32))
+        for m in population:
+            agr_model.linear1.weight += m.linear1.weight
+        agr_model.linear1.weight /= population.shape[0]
+
+        w = agr_model.linear1.weight.detach().cpu().numpy()  # weight
         for i in range(9):
             fig.add_heatmap(visible=False,
                             z=w[i, :].reshape((28, 28)), row=row, col=col)
@@ -143,13 +153,15 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
             if col == 4:
                 col = 1
                 row += 1
-        if epoch % 10 == 0:
+        if epoch % 3 == 0:
             x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
             y_predict = best_species[0](x_test)
+            y_predict2 = agr_model(x_test)
             acc = round(accuracy(y_predict, y_test).item(), 3)
+            acc2 = round(accuracy(y_predict2, y_test).item(), 3)
             print(f"№{epoch} end in {round(time() - start)}secs. "
                   f"Loss = {round(torch.min(result).item(), 4)}. "
-                  f"Acc = {acc}")
+                  f"Acc = {acc}. Acc2 = {acc2}")
             start = time()
     return best_species
 
@@ -165,8 +177,8 @@ def main():
     # loss_fn = Accuracy().to(device)
     loss_fn = torch.nn.CrossEntropyLoss()
     print("START TRAINING!")
-    epochs = 50 + 1
-    len_of_population = 20
+    epochs = 25 + 1
+    len_of_population = 50
     mutation_parameters = (0, 0.001)  # mean and std
     population = np.array([MLP(input_shape, 10)
                            for _ in range(len_of_population)])
@@ -194,8 +206,14 @@ if __name__ == "__main__":
                                [{}, {}, {}],
                                [{}, {}, {}],
                                [{"colspan": 3}, None, None]], )
-    model = main()
-
+    models = main()
+    agr_model = MLP(784, 10)
+    agr_model.linear1.weight = torch.nn.Parameter(torch.zeros((10, 784),
+                                                              device=device, dtype=torch.float32))
+    with torch.no_grad():
+        for m in models:
+            agr_model.linear1.weight += m.linear1.weight
+        agr_model.linear1.weight /= models.shape[0]
     steps = []
     for i in range(len(history_of_fittness)):
         step = dict(
