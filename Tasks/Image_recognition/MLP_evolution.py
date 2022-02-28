@@ -1,3 +1,4 @@
+import random
 from time import time
 import pandas as pd
 import numpy as np
@@ -25,8 +26,14 @@ class MLP(torch.nn.Module):
         return x
 
     def mutate(self, mean, std):
-        self.linear1.weight += torch.normal(mean=mean, std=std,
-                                            size=self.linear1.weight.shape, device=device)
+        shape_of_weight = self.linear1.weight.shape
+        size_of_mutation = (1, 784)
+        # size_of_mutation = (10, 784)
+        indexes_of_mutation = (random.randint(0, shape_of_weight[0] - size_of_mutation[0]),
+                               random.randint(0, shape_of_weight[1] - size_of_mutation[1]))
+        self.linear1.weight[indexes_of_mutation[0]:indexes_of_mutation[0] + size_of_mutation[0],
+                            indexes_of_mutation[1]:indexes_of_mutation[1] + size_of_mutation[1]] += \
+            torch.normal(mean=mean, std=std, size=size_of_mutation, device=device)
         # self.linear2.weight += torch.normal(mean=self.mean, std=self.std,
         #                                     size=self.linear2.weight.shape, device=device)
 
@@ -108,13 +115,7 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
     accuracy = Accuracy().to(device)
     start = time()
 
-    # blur_kernel = get_gauss_kernel(3, 0.3)
     for epoch in range(epochs):
-        # if epoch % 5 == 0:
-        #     for specie in population:
-        #         blured_weight = median_kernel(specie.linear1.weight.cpu().numpy(), 3, 1)
-        #         blured_weight = torch.tensor(blured_weight, dtype=torch.float32, device=device)
-        #         specie.linear1.weight = torch.nn.Parameter(blured_weight)
         for x, y in train_dl:
             for id_specie, specie in enumerate(population):
                 y_predict = specie(x)
@@ -130,38 +131,27 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
                     population[id_specie].mutate(mean, std)
 
         # save loss
-        # history_of_fittness.append(result[0].item())
-        history_of_fittness.append(0)
+        history_of_fittness.append(result[0])
         # plotting graphs
         fig.add_trace(go.Scatter(x=list(range(len(history_of_fittness))), y=history_of_fittness),
                       row=4, col=1)
         row, col = 1, 1
-
-        agr_model = MLP(784, 10)
-        agr_model.linear1.weight = torch.nn.Parameter(torch.zeros((10, 784),
-                                                                  device=device,
-                                                                  dtype=torch.float32))
-        for m in population:
-            agr_model.linear1.weight += m.linear1.weight
-        agr_model.linear1.weight /= population.shape[0]
-
-        w = agr_model.linear1.weight.detach().cpu().numpy()  # weight
-        for i in range(9):
+        w = best_species[0].linear1.weight.detach().cpu().numpy()  # weight
+        for digit in range(9):
             fig.add_heatmap(visible=False,
-                            z=w[i, :].reshape((28, 28)), row=row, col=col)
+                            z=w[digit, :].reshape((28, 28)), row=row, col=col)
             col += 1
             if col == 4:
                 col = 1
                 row += 1
+        # stat of fit
         if epoch % 3 == 0:
             x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
             y_predict = best_species[0](x_test)
-            y_predict2 = agr_model(x_test)
             acc = round(accuracy(y_predict, y_test).item(), 3)
-            acc2 = round(accuracy(y_predict2, y_test).item(), 3)
             print(f"№{epoch} end in {round(time() - start)}secs. "
                   f"Loss = {round(torch.min(result).item(), 4)}. "
-                  f"Acc = {acc}. Acc2 = {acc2}")
+                  f"Acc = {acc}.")
             start = time()
     return best_species
 
@@ -177,13 +167,27 @@ def main():
     # loss_fn = Accuracy().to(device)
     loss_fn = torch.nn.CrossEntropyLoss()
     print("START TRAINING!")
-    epochs = 25 + 1
-    len_of_population = 50
+    epochs = 200 + 1
+    len_of_population = 20
     mutation_parameters = (0, 0.001)  # mean and std
     population = np.array([MLP(input_shape, 10)
                            for _ in range(len_of_population)])
     with torch.no_grad():
         arr_of_nets = fit(population, epochs, mutation_parameters, loss_fn, train_dl, test_dl)
+
+    steps = []
+    for i in range(len(history_of_fittness)):
+        step = dict(
+            method='restyle',
+            args=[{"visible": [False] * len(fig.data)}],
+        )
+        count_of_plots = 10
+        for k in range(count_of_plots):
+            step["args"][0]["visible"][count_of_plots * i + k] = True
+        steps.append(step)
+
+    sliders = [dict(steps=steps)]
+    fig.layout.sliders = sliders
 
     fitted_net = arr_of_nets[0]
     x, y = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
@@ -191,6 +195,9 @@ def main():
     accuracy = Accuracy().to(device)
     acc = accuracy(y_predict, y)
     print(f"Result accuracy={round(acc.item(), 3)}")
+    conf_mat = ConfusionMatrix(10).to(device)
+    res_c_m = conf_mat(y_predict, test_dl.dataset.tensors[1])
+    print(res_c_m)
     return arr_of_nets
 
 
@@ -207,27 +214,4 @@ if __name__ == "__main__":
                                [{}, {}, {}],
                                [{"colspan": 3}, None, None]], )
     models = main()
-    agr_model = MLP(784, 10)
-    agr_model.linear1.weight = torch.nn.Parameter(torch.zeros((10, 784),
-                                                              device=device, dtype=torch.float32))
-    with torch.no_grad():
-        for m in models:
-            agr_model.linear1.weight += m.linear1.weight
-        agr_model.linear1.weight /= models.shape[0]
-    steps = []
-    for i in range(len(history_of_fittness)):
-        step = dict(
-            method='restyle',
-            args=[{"visible": [False] * len(fig.data)}],
-        )
-        count_of_plots = 10
-        for k in range(count_of_plots):
-            step["args"][0]["visible"][count_of_plots * i + k] = True
-        steps.append(step)
-
-    sliders = [dict(
-        steps=steps,
-    )]
-
-    fig.layout.sliders = sliders
     fig.show()
