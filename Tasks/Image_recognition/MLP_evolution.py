@@ -104,39 +104,35 @@ def get_data_loaders(x, y):
     return train_data_loader, test_data_loader
 
 
-def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, descending=False):
+def fit(net: MLP, epochs, parameters, loss_func, train_dl, test_dl):
     global fig
-    """if we need minimize loss_func- descending should be True"""
-    # how many of the best species do we take from the population
     mean, std = parameters
-    num_of_bests = int(len(population) * 0.1)
-    best_species = None  # the best species of the population
-    result = torch.zeros(len(population), dtype=torch.float32)
     accuracy = Accuracy().to(device)
     start = time()
+    x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
 
+    predict = net(x_test)
+    loss = loss_func(predict, y_test)
+    print("Null Loss", loss.item())
     for epoch in range(epochs):
         for x, y in train_dl:
-            for id_specie, specie in enumerate(population):
-                y_predict = specie(x)
-                loss = loss_func(y_predict, y)
-                result[id_specie] = loss
-            # choose the bests
-            best_ids = torch.argsort(result, descending=descending)
-            best_species = population[best_ids[:num_of_bests]]
-            result = result[best_ids]
-            for id_specie, specie in enumerate(population):
-                population[id_specie] = best_species[id_specie % num_of_bests].clone()
-                if id_specie > num_of_bests:
-                    population[id_specie].mutate(mean, std)
+            mutated_net = net.clone()
+            mutated_net.mutate(mean, std)
 
+            mut_predict = mutated_net(x)
+            predict = net(x)
+            mut_loss = loss_func(mut_predict, y)
+            loss = loss_func(predict, y)
+            # choose the bests
+            if mut_loss < loss:
+                net = mutated_net.clone()
         # save loss
-        history_of_fittness.append(result[0])
+        history_of_fittness.append(loss.cpu())
         # plotting graphs
         fig.add_trace(go.Scatter(x=list(range(len(history_of_fittness))), y=history_of_fittness),
                       row=4, col=1)
         row, col = 1, 1
-        w = best_species[0].linear1.weight.detach().cpu().numpy()  # weight
+        w = net.linear1.weight.detach().cpu().numpy()  # weight
         for digit in range(9):
             fig.add_heatmap(visible=False,
                             z=w[digit, :].reshape((28, 28)), row=row, col=col)
@@ -145,15 +141,15 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
                 col = 1
                 row += 1
         # stat of fit
-        if epoch % 3 == 0:
-            x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
-            y_predict = best_species[0](x_test)
-            acc = round(accuracy(y_predict, y_test).item(), 3)
+        if epoch % 10 == 0:
+            predict_test = net(x_test)
+            test_loss = loss_func(predict_test, y_test)
+            acc = accuracy(predict_test, y_test).item()
             print(f"№{epoch} end in {round(time() - start)}secs. "
-                  f"Loss = {round(torch.min(result).item(), 4)}. "
-                  f"Acc = {acc}.")
+                  f"Loss = {round(test_loss.item(), 4)}. "
+                  f"Acc = {round(acc, 3)}.")
             start = time()
-    return best_species
+    return net
 
 
 def main():
@@ -167,13 +163,11 @@ def main():
     # loss_fn = Accuracy().to(device)
     loss_fn = torch.nn.CrossEntropyLoss()
     print("START TRAINING!")
-    epochs = 200 + 1
-    len_of_population = 20
-    mutation_parameters = (0, 0.001)  # mean and std
-    population = np.array([MLP(input_shape, 10)
-                           for _ in range(len_of_population)])
+    epochs = 3*200 + 1
+    mutation_parameters = (0, 0.003)  # mean and std
+    null_net = MLP(input_shape, 10)
     with torch.no_grad():
-        arr_of_nets = fit(population, epochs, mutation_parameters, loss_fn, train_dl, test_dl)
+        fitted_net = fit(null_net, epochs, mutation_parameters, loss_fn, train_dl, test_dl)
 
     steps = []
     for i in range(len(history_of_fittness)):
@@ -189,7 +183,6 @@ def main():
     sliders = [dict(steps=steps)]
     fig.layout.sliders = sliders
 
-    fitted_net = arr_of_nets[0]
     x, y = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
     y_predict = fitted_net(x)
     accuracy = Accuracy().to(device)
@@ -198,7 +191,7 @@ def main():
     conf_mat = ConfusionMatrix(10).to(device)
     res_c_m = conf_mat(y_predict, test_dl.dataset.tensors[1])
     print(res_c_m)
-    return arr_of_nets
+    return fitted_net
 
 
 if __name__ == "__main__":
