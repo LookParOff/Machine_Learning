@@ -1,3 +1,4 @@
+import os
 import random
 from time import time
 import pandas as pd
@@ -18,6 +19,7 @@ class MLP(torch.nn.Module):
         self.input = count_of_inp_neu
         self.output = count_of_out_neu
         self.linear1 = torch.nn.Linear(self.input, self.output, device=device)
+        self.linear1 = self.linear1.requires_grad_(False)
         # self.linear2 = torch.zeros((self.hidden, self.output), device=device)
 
     def __call__(self, x):
@@ -109,26 +111,47 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
     """if we need minimize loss_func- descending should be True"""
     # how many of the best species do we take from the population
     mean, std = parameters
-    num_of_bests = int(len(population) * 0.1)
-    best_species = None  # the best species of the population
+    limit_size_population = len(population)
     result = torch.zeros(len(population), dtype=torch.float32)
     accuracy = Accuracy().to(device)
     start = time()
-
     for epoch in range(epochs):
         for x, y in train_dl:
+            # mutation
+            for id_specie, specie in enumerate(population):
+                population[id_specie].mutate(mean, std)
+            # crossover
+            offspring_population = np.array([])
+            while len(offspring_population) < limit_size_population:
+                id_mother, id_father = torch.randint(10, size=(2,))
+                if id_father == id_mother:
+                    continue
+                mother = population[id_mother]
+                father = population[id_father]
+                offspring = father.clone()
+                weight_shape = offspring.linear1.weight.shape
+                # generate random indexes, to give something to offspring from mother
+                # but not more than a half
+                count_crossover = weight_shape[0] * weight_shape[1] // 2
+                indexes_dim_0 = torch.randint(0, weight_shape[0], size=(count_crossover, 1))
+                indexes_dim_1 = torch.randint(0, weight_shape[1], size=(count_crossover, 1))
+
+                offspring.linear1.weight.data[indexes_dim_0, indexes_dim_1] = \
+                    mother.linear1.weight.data[indexes_dim_0, indexes_dim_1]
+                offspring_population = np.append(offspring_population, offspring)
+
+            population = np.append(population, offspring_population)
+
+            # keep the bests
+            result = torch.zeros(len(population), dtype=torch.float32)
             for id_specie, specie in enumerate(population):
                 y_predict = specie(x)
                 loss = loss_func(y_predict, y)
                 result[id_specie] = loss
-            # choose the bests
             best_ids = torch.argsort(result, descending=descending)
-            best_species = population[best_ids[:num_of_bests]]
+            population = population[best_ids]
+            population = population[:limit_size_population]
             result = result[best_ids]
-            for id_specie, specie in enumerate(population):
-                population[id_specie] = best_species[id_specie % num_of_bests].clone()
-                if id_specie > num_of_bests:
-                    population[id_specie].mutate(mean, std)
 
         # save loss
         history_of_fittness.append(result[0])
@@ -136,7 +159,7 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
         fig.add_trace(go.Scatter(x=list(range(len(history_of_fittness))), y=history_of_fittness),
                       row=4, col=1)
         row, col = 1, 1
-        w = best_species[0].linear1.weight.detach().cpu().numpy()  # weight
+        w = population[0].linear1.weight.detach().cpu().numpy()  # weight
         for digit in range(9):
             fig.add_heatmap(visible=False,
                             z=w[digit, :].reshape((28, 28)), row=row, col=col)
@@ -145,18 +168,19 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
                 col = 1
                 row += 1
         # stat of fit
-        if epoch % 3 == 0:
+        if epoch % 1 == 0:
             x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
-            y_predict = best_species[0](x_test)
+            y_predict = population[0](x_test)
             acc = round(accuracy(y_predict, y_test).item(), 3)
             print(f"№{epoch} end in {round(time() - start)}secs. "
                   f"Loss = {round(torch.min(result).item(), 4)}. "
                   f"Acc = {acc}.")
             start = time()
-    return best_species
+    return population
 
 
 def main():
+    # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     path = r"C:\Users\Norma\PycharmProjects\Machine Learning\Datasets\MNIST\train.csv"
     x, y = parse_data(path)
     x = x / np.std(x)
@@ -167,9 +191,9 @@ def main():
     # loss_fn = Accuracy().to(device)
     loss_fn = torch.nn.CrossEntropyLoss()
     print("START TRAINING!")
-    epochs = 200 + 1
-    len_of_population = 20
-    mutation_parameters = (0, 0.001)  # mean and std
+    epochs = 50 + 1
+    len_of_population = 10
+    mutation_parameters = (0, 0.003)  # mean and std
     population = np.array([MLP(input_shape, 10)
                            for _ in range(len_of_population)])
     with torch.no_grad():
@@ -205,8 +229,8 @@ if __name__ == "__main__":
     # https://towardsdatascience.com/evolving-neural-networks-b24517bb3701
     pio.renderers.default = "browser"
     softmax = torch.nn.Softmax(dim=-1)
-    device = torch.device("cuda")
-    # device = torch.device("cpu")
+    # device = torch.device("cuda")
+    device = torch.device("cpu")
     history_of_fittness = []
     fig = make_subplots(rows=4, cols=3, subplot_titles=list(range(9)),
                         specs=[[{}, {}, {}],
