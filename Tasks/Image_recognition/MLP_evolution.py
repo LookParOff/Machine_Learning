@@ -31,13 +31,15 @@ class MLP(torch.nn.Module):
         shape_of_weight = self.linear1.weight.shape
         size_of_mutation = (1, 784)
         # size_of_mutation = (10, 784)
-        indexes_of_mutation = (random.randint(0, shape_of_weight[0] - size_of_mutation[0]),
-                               random.randint(0, shape_of_weight[1] - size_of_mutation[1]))
-        self.linear1.weight[indexes_of_mutation[0]:indexes_of_mutation[0] + size_of_mutation[0],
-                            indexes_of_mutation[1]:indexes_of_mutation[1] + size_of_mutation[1]] += \
+        idx_of_mutation = (random.randint(0, shape_of_weight[0] - size_of_mutation[0]),
+                           random.randint(0, shape_of_weight[1] - size_of_mutation[1]))
+        mutated_net = self.clone()
+        mutated_net.linear1.weight[idx_of_mutation[0]:idx_of_mutation[0] + size_of_mutation[0],
+                                   idx_of_mutation[1]:idx_of_mutation[1] + size_of_mutation[1]] += \
             torch.normal(mean=mean, std=std, size=size_of_mutation, device=device)
         # self.linear2.weight += torch.normal(mean=self.mean, std=self.std,
         #                                     size=self.linear2.weight.shape, device=device)
+        return mutated_net
 
     def clone(self):
         copy_net = MLP(self.input, self.output)
@@ -90,9 +92,6 @@ def get_data_loaders(x, y):
     x_test = x[x.shape[0] - int(x.shape[0] * percentOfSplit):, :]
     y_test = y[y.shape[0] - int(y.shape[0] * percentOfSplit):]
 
-    x_train = np.concatenate([x_train, x_train + np.random.normal(0, 0.3, size=x_train.shape)])
-    y_train = np.concatenate([y_train, y_train])
-
     x_train = torch.tensor(x_train, dtype=torch.float32, device=device)
     y_train = torch.tensor(y_train, device=device)
     x_test = torch.tensor(x_test, dtype=torch.float32, device=device)
@@ -117,29 +116,34 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
     start = time()
     for epoch in range(epochs):
         for x, y in train_dl:
-            # mutation
-            for id_specie, specie in enumerate(population):
-                population[id_specie].mutate(mean, std)
-            # crossover
             offspring_population = np.array([])
-            while len(offspring_population) < limit_size_population:
-                id_mother, id_father = torch.randint(10, size=(2,))
-                if id_father == id_mother:
-                    continue
-                mother = population[id_mother]
-                father = population[id_father]
-                offspring = father.clone()
-                weight_shape = offspring.linear1.weight.shape
-                # generate random indexes, to give something to offspring from mother
-                # but not more than a half
-                count_crossover = weight_shape[0] * weight_shape[1] // 2
-                indexes_dim_0 = torch.randint(0, weight_shape[0], size=(count_crossover, 1))
-                indexes_dim_1 = torch.randint(0, weight_shape[1], size=(count_crossover, 1))
+            prob = np.random.random()  # prob of crossover
+            if prob > 0:
+                # mutation
+                for id_specie, specie in enumerate(population):
+                    offspring_population = np.append(offspring_population, specie)
+                    for _ in range(3):
+                        offspring_population = np.append(offspring_population,
+                                                         specie.mutate(mean, std))
+            else:
+                # crossover
+                while len(offspring_population) < limit_size_population:
+                    id_mother, id_father = torch.randint(10, size=(2,))
+                    if id_father == id_mother:
+                        continue
+                    mother = population[id_mother]
+                    father = population[id_father]
+                    offspring = father.clone()
+                    weight_shape = offspring.linear1.weight.shape
+                    # generate random indexes, to give something to offspring from mother
+                    # but not more than a half
+                    count_crossover = weight_shape[0] * weight_shape[1] // 2
+                    indexes_dim_0 = torch.randint(0, weight_shape[0], size=(count_crossover, 1))
+                    indexes_dim_1 = torch.randint(0, weight_shape[1], size=(count_crossover, 1))
 
-                offspring.linear1.weight.data[indexes_dim_0, indexes_dim_1] = \
-                    mother.linear1.weight.data[indexes_dim_0, indexes_dim_1]
-                offspring_population = np.append(offspring_population, offspring)
-
+                    offspring.linear1.weight.data[indexes_dim_0, indexes_dim_1] = \
+                        mother.linear1.weight.data[indexes_dim_0, indexes_dim_1]
+                    offspring_population = np.append(offspring_population, offspring)
             population = np.append(population, offspring_population)
 
             # keep the bests
@@ -168,7 +172,7 @@ def fit(population: np.array, epochs, parameters, loss_func, train_dl, test_dl, 
                 col = 1
                 row += 1
         # stat of fit
-        if epoch % 1 == 0:
+        if epoch % 5 == 0:
             x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
             y_predict = population[0](x_test)
             acc = round(accuracy(y_predict, y_test).item(), 3)
@@ -191,7 +195,7 @@ def main():
     # loss_fn = Accuracy().to(device)
     loss_fn = torch.nn.CrossEntropyLoss()
     print("START TRAINING!")
-    epochs = 50 + 1
+    epochs = 100 + 1
     len_of_population = 10
     mutation_parameters = (0, 0.003)  # mean and std
     population = np.array([MLP(input_shape, 10)
