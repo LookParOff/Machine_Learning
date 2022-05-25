@@ -3,8 +3,13 @@ import pandas as pd
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 from torchmetrics import Accuracy
-import seaborn as sns
-import matplotlib.pyplot as plt
+
+import plotly.io as pio
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+
+pio.renderers.default = "browser"
 
 
 class MLP(torch.nn.Module):
@@ -12,13 +17,12 @@ class MLP(torch.nn.Module):
         super().__init__()
         self.input_shape = count_of_inp_neu
         self.relu = torch.nn.ReLU()
-        self.softmax = torch.nn.Softmax()
+        self.softmax = torch.nn.Softmax(dim=-1)
 
         self.linear1 = torch.nn.Linear(self.input_shape, 10, device=device)
         # self.linear2 = torch.nn.Linear(50, 10)
 
     def forward(self, x):
-        # x = self.relu(self.linear1(x))
         x = self.softmax(self.linear1(x))
         return x
 
@@ -58,26 +62,26 @@ def fit(model, epochs, loss_func, opt, train_dl, test_dl):
             opt.zero_grad()
             loss.backward()
             opt.step()
+
+        history_of_fittness.append(loss.item())
+        fig.add_trace(go.Scatter(x=list(range(len(history_of_fittness))), y=history_of_fittness),
+                      row=4, col=1)
+        row, col = 1, 1
+        w = model.linear1.weight.detach().cpu().numpy()  # weight
+        for digit in range(9):
+            fig.add_heatmap(visible=False,
+                            z=w[digit, :].reshape((28, 28)), row=row, col=col)
+            col += 1
+            if col == 4:
+                col = 1
+                row += 1
+
         if epoch % 10 == 0:
             y_predict = model(x_test)
             acc = round(accuracy(y_predict, y_test).item(), 3)
             print(f"Epoch {epoch} calc in {round(time() - start_time)}sec. "
-                  f"Loss = {loss.item()}. Test acc = {acc}")
+                  f"Loss = {history_of_fittness[-1]}. Test acc = {acc}")
             start_time = time()
-            m = model.linear1.weight.detach().cpu().numpy()
-            fig, ax = plt.subplots(3, 3)
-            row, col = 0, 0
-
-            for i in range(9):
-                sns.heatmap(m[i, :].reshape((28, 28)),
-                            ax=ax[row, col])
-                col += 1
-                if col == 3:
-                    col = 0
-                    row += 1
-            plt.title(f"epoch №{epoch}", fontsize=20)
-            plt.tight_layout()
-            plt.show()
 
     y_predict = model(x_test)
     acc = accuracy(y_predict, y_test)
@@ -96,19 +100,45 @@ def main():
 
     net = MLP(input_shape)
     net = net.to(device=device, dtype=torch.float32)
-    loss_fn = torch.nn.CrossEntropyLoss(reduction="sum")
+    loss_fn = torch.nn.CrossEntropyLoss(reduction="mean")
 
     print("START TRAINING!")
     learning_rate = 0.001
     optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
-    epochs = 70 + 1
+    epochs = 100 + 1
     net = fit(net, epochs, loss_fn, optimizer, train_dl, test_dl)
     return net
 
 
 if __name__ == "__main__":
     device = torch.device("cuda")
+    history_of_fittness = []
+    fig = make_subplots(rows=4, cols=3, subplot_titles=list(range(9)),
+                        specs=[[{}, {}, {}],
+                               [{}, {}, {}],
+                               [{}, {}, {}],
+                               [{"colspan": 3}, None, None]], )
     model = main()
+    steps = []
+    for i in range(len(history_of_fittness)):
+        step = dict(
+            method='restyle',
+            args=[{"visible": [False] * len(fig.data)}],
+        )
+        count_of_plots = 10
+        for k in range(count_of_plots):
+            step["args"][0]["visible"][count_of_plots * i + k] = True
+        steps.append(step)
+
+    sliders = [dict(steps=steps)]
+    fig.layout.sliders = sliders
+    fig.show()
+    out_file = open("stat classic 0.001 101 epoch.txt", "w")
+    h = []
+    for el in history_of_fittness:
+        h.append(str(el) + "\n")
+    out_file.writelines(h)
+    out_file.close()
     # path = r"C:\Users\Norma\PycharmProjects\Machine Learning\Datasets\MNIST\test.csv"
     # df = pd.read_csv(path, sep=",")
     # test_x = torch.tensor(df.to_numpy(), dtype=torch.float32, device=device)

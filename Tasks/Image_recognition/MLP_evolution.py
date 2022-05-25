@@ -1,3 +1,4 @@
+import os
 import random
 from time import time
 import pandas as pd
@@ -13,32 +14,76 @@ from plotly.subplots import make_subplots
 
 
 class MLP(torch.nn.Module):
-    def __init__(self, count_of_inp_neu, count_of_out_neu):
+    def __init__(self, count_of_inp_neu, count_of_out_neu, mutation_parameters):
         super().__init__()
         self.input = count_of_inp_neu
         self.output = count_of_out_neu
         self.linear1 = torch.nn.Linear(self.input, self.output, device=device)
-        # self.linear2 = torch.zeros((self.hidden, self.output), device=device)
+        self.linear1 = self.linear1.requires_grad_(False)
+
+        dist = torch.distributions.Normal
+        self.mutation_parameters = mutation_parameters
+        if len(mutation_parameters) == 2:
+            loc, scale = mutation_parameters
+            self.random_distribution = dist(loc, scale)
+        else:
+            param = mutation_parameters[0]
+            self.random_distribution = dist(param)
 
     def __call__(self, x):
         x = softmax(self.linear1(x))
         # x = self.softmax(torch.mm(x, self.linear2))
         return x
 
-    def mutate(self, mean, std):
+    def __str__(self):
+        str_to_return = f"{self.random_distribution}"
+        str_to_return = str_to_return.replace(":", "=")
+        return str_to_return
+
+    def mutate(self):
         shape_of_weight = self.linear1.weight.shape
         size_of_mutation = (1, 784)
-        # size_of_mutation = (10, 784)
-        indexes_of_mutation = (random.randint(0, shape_of_weight[0] - size_of_mutation[0]),
-                               random.randint(0, shape_of_weight[1] - size_of_mutation[1]))
-        self.linear1.weight[indexes_of_mutation[0]:indexes_of_mutation[0] + size_of_mutation[0],
-                            indexes_of_mutation[1]:indexes_of_mutation[1] + size_of_mutation[1]] += \
-            torch.normal(mean=mean, std=std, size=size_of_mutation, device=device)
-        # self.linear2.weight += torch.normal(mean=self.mean, std=self.std,
-        #                                     size=self.linear2.weight.shape, device=device)
+        idx_of_mutation = (random.randint(0, shape_of_weight[0] - size_of_mutation[0]),
+                           random.randint(0, shape_of_weight[1] - size_of_mutation[1]))
+        # idx_of_mutation_0 = random.randint(0, shape_of_weight[0] - size_of_mutation[0])
+        # idx_of_mutation_1 = np.int(
+        #     np.random.normal(shape_of_weight[1] // 2, shape_of_weight[1] // 3))
+        # if idx_of_mutation_0 > shape_of_weight[0] - size_of_mutation[0]:
+        #     idx_of_mutation_0 = shape_of_weight[0] - size_of_mutation[0]
+        # if idx_of_mutation_1 > shape_of_weight[1] - size_of_mutation[1]:
+        #     idx_of_mutation_1 = shape_of_weight[1] - size_of_mutation[1]
+        # if idx_of_mutation_0 < 0:
+        #     idx_of_mutation_0 = 0
+        # if idx_of_mutation_1 < 0:
+        #     idx_of_mutation_1 = 0
+        #
+        # idx_of_mutation = (idx_of_mutation_0, idx_of_mutation_1)
+
+        mutated_net = self.clone()
+        matrix_of_mutation = self.random_distribution.sample(size_of_mutation)
+        mutated_net.linear1.weight[idx_of_mutation[0]:idx_of_mutation[0] + size_of_mutation[0],
+                                   idx_of_mutation[1]:idx_of_mutation[1] + size_of_mutation[1]] += \
+            matrix_of_mutation
+
+        mutated_net.linear1.bias += \
+            self.random_distribution.sample(mutated_net.linear1.bias.shape)
+        return mutated_net
+
+    def crossover(self, partner):
+        baby = self.clone()
+        weight_shape = baby.linear1.weight.shape
+        # generate random indexes, to give something to offspring from mother
+        # but not more than a half
+        count_crossover = weight_shape[0] * weight_shape[1] // 2
+        indexes_dim_0 = torch.randint(0, weight_shape[0], size=(count_crossover, 1))
+        indexes_dim_1 = torch.randint(0, weight_shape[1], size=(count_crossover, 1))
+
+        baby.linear1.weight.data[indexes_dim_0, indexes_dim_1] = \
+            partner.linear1.weight.data[indexes_dim_0, indexes_dim_1]
+        return baby
 
     def clone(self):
-        copy_net = MLP(self.input, self.output)
+        copy_net = MLP(self.input, self.output, self.mutation_parameters)
         copy_net.load_state_dict(self.state_dict())
         return copy_net
 
@@ -56,7 +101,7 @@ def get_gauss_kernel(size, sigma):
 
 def median_kernel(mat, size, padding=0):
     pad_matrix = np.pad(mat, padding)
-    res_a = np.zeros((pad_matrix.shape[0] - size//2 * 2, pad_matrix.shape[1] - size//2 * 2))
+    res_a = np.zeros((pad_matrix.shape[0] - size // 2 * 2, pad_matrix.shape[1] - size // 2 * 2))
     for i_ in range(res_a.shape[0]):
         for j_ in range(res_a.shape[1]):
             res_a[i_, j_] = np.median(pad_matrix[i_:i_ + size, j_:j_ + size])
@@ -88,8 +133,8 @@ def get_data_loaders(x, y):
     x_test = x[x.shape[0] - int(x.shape[0] * percentOfSplit):, :]
     y_test = y[y.shape[0] - int(y.shape[0] * percentOfSplit):]
 
-    x_train = np.concatenate([x_train, x_train + np.random.normal(0, 0.3, size=x_train.shape)])
-    y_train = np.concatenate([y_train, y_train])
+    # x_train = np.concatenate([x_train, x_train + np.random.normal(0, 0.003, size=x_train.shape)])
+    # y_train = np.concatenate([y_train, y_train])
 
     x_train = torch.tensor(x_train, dtype=torch.float32, device=device)
     y_train = torch.tensor(y_train, device=device)
@@ -104,35 +149,55 @@ def get_data_loaders(x, y):
     return train_data_loader, test_data_loader
 
 
-def fit(net: MLP, epochs, parameters, loss_func, train_dl, test_dl):
+def fit(population: np.array, epochs, loss_func, train_dl, test_dl, descending=False):
     global fig
-    mean, std = parameters
+    """if we need minimize loss_func- descending should be True"""
+    # how many of the best species do we take from the population
+    limit_size_population = len(population)
+    result = torch.zeros(len(population), dtype=torch.float32)
     accuracy = Accuracy().to(device)
     start = time()
-    x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
-
-    predict = net(x_test)
-    loss = loss_func(predict, y_test)
-    print("Null Loss", loss.item())
     for epoch in range(epochs):
+        # if epoch % 10 == 0:
+        #     for specie in population:
+        #         w = specie.linear1.weight.detach().cpu().numpy()
+        #         w = np.round(w, 2)
+        #         w = torch.tensor(w, device=device)
+        #         specie.linear1.weight.data = w
         for x, y in train_dl:
-            mutated_net = net.clone()
-            mutated_net.mutate(mean, std)
+            # crossover
+            offspring_population = np.array([])
+            for id_specie, specie in enumerate(population[1:]):
+                father = population[0]
+                mother = population[id_specie]
+                offspring = father.crossover(mother)
+                offspring_population = np.append(offspring_population, offspring)
+            population = np.append(population, offspring_population)
 
-            mut_predict = mutated_net(x)
-            predict = net(x)
-            mut_loss = loss_func(mut_predict, y)
-            loss = loss_func(predict, y)
-            # choose the bests
-            if mut_loss < loss:
-                net = mutated_net.clone()
+            # mutation
+            offspring_population = np.array([])
+            for id_specie, specie in enumerate(population):
+                offspring_population = np.append(offspring_population, specie.mutate())
+            population = np.append(population, offspring_population)
+
+            # keep the bests
+            result = torch.zeros(len(population), dtype=torch.float32)
+            for id_specie, specie in enumerate(population):
+                y_predict = specie(x)
+                loss = loss_func(y_predict, y)
+                result[id_specie] = loss
+            best_ids = torch.argsort(result, descending=descending)
+            population = population[best_ids]
+            population = population[:limit_size_population]
+            result = result[best_ids]
+
         # save loss
-        history_of_fittness.append(loss.cpu())
+        history_of_fittness.append(result[0].item())
         # plotting graphs
         fig.add_trace(go.Scatter(x=list(range(len(history_of_fittness))), y=history_of_fittness),
                       row=4, col=1)
         row, col = 1, 1
-        w = net.linear1.weight.detach().cpu().numpy()  # weight
+        w = population[0].linear1.weight.detach().cpu().numpy()  # weight
         for digit in range(9):
             fig.add_heatmap(visible=False,
                             z=w[digit, :].reshape((28, 28)), row=row, col=col)
@@ -141,18 +206,19 @@ def fit(net: MLP, epochs, parameters, loss_func, train_dl, test_dl):
                 col = 1
                 row += 1
         # stat of fit
-        if epoch % 10 == 0:
-            predict_test = net(x_test)
-            test_loss = loss_func(predict_test, y_test)
-            acc = accuracy(predict_test, y_test).item()
-            print(f"№{epoch} end in {round(time() - start)}secs. "
-                  f"Loss = {round(test_loss.item(), 4)}. "
-                  f"Acc = {round(acc, 3)}.")
+        if epoch % 10 == 9:
+            x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
+            y_predict = population[0](x_test)
+            acc = round(accuracy(y_predict, y_test).item(), 3)
+            print(f"№{epoch} end in {round(time() - start, 1)}secs. "
+                  f"Loss = {round(torch.min(result).item(), 4)}. "
+                  f"Acc = {acc}.")
             start = time()
-    return net
+    return population
 
 
 def main():
+    # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     path = r"C:\Users\Norma\PycharmProjects\Machine Learning\Datasets\MNIST\train.csv"
     x, y = parse_data(path)
     x = x / np.std(x)
@@ -160,14 +226,17 @@ def main():
     input_shape = x.shape[1]
     train_dl, test_dl = get_data_loaders(x, y)
 
-    # loss_fn = Accuracy().to(device)
     loss_fn = torch.nn.CrossEntropyLoss()
     print("START TRAINING!")
-    epochs = 3*200 + 1
-    mutation_parameters = (0, 0.003)  # mean and std
-    null_net = MLP(input_shape, 10)
+    epochs = 10 + 1
+    len_of_population = 50
+    mutation_parameters = (torch.tensor(0, device=device, dtype=torch.float32),
+                           torch.tensor(0.05, device=device, dtype=torch.float32))
+    # mutation_parameters = [torch.tensor(50, device=device, dtype=torch.float32)]
+    population = np.array([MLP(input_shape, 10, mutation_parameters)
+                           for _ in range(len_of_population)])
     with torch.no_grad():
-        fitted_net = fit(null_net, epochs, mutation_parameters, loss_fn, train_dl, test_dl)
+        arr_of_nets = fit(population, epochs, loss_fn, train_dl, test_dl)
 
     steps = []
     for i in range(len(history_of_fittness)):
@@ -183,6 +252,7 @@ def main():
     sliders = [dict(steps=steps)]
     fig.layout.sliders = sliders
 
+    fitted_net = arr_of_nets[0]
     x, y = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
     y_predict = fitted_net(x)
     accuracy = Accuracy().to(device)
@@ -191,7 +261,7 @@ def main():
     conf_mat = ConfusionMatrix(10).to(device)
     res_c_m = conf_mat(y_predict, test_dl.dataset.tensors[1])
     print(res_c_m)
-    return fitted_net
+    return arr_of_nets
 
 
 if __name__ == "__main__":
@@ -208,3 +278,11 @@ if __name__ == "__main__":
                                [{"colspan": 3}, None, None]], )
     models = main()
     fig.show()
+    name_of_file = f"uniform dist of s_of_mut (1, 784) {models[0]}"
+    path = os.path.dirname(os.path.dirname(__file__))
+    out_file = open(f"{path}/VKR/stat_for_graphs/{name_of_file}.txt", "w")
+    h = []
+    for el in history_of_fittness:
+        h.append(str(el) + "\n")
+    out_file.writelines(h)
+    out_file.close()

@@ -5,6 +5,9 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 from torchmetrics import Accuracy
 
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 
 class ConvEvolution(torch.nn.Module):
     def __init__(self, mutation_param):
@@ -14,11 +17,11 @@ class ConvEvolution(torch.nn.Module):
         self.softmax = torch.nn.Softmax(dim=1)
         self.max_pool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
         self.dropout = torch.nn.Dropout(0.5)
-        self.conv1 = torch.nn.Conv2d(1, 32, kernel_size=(5, 5), stride=(1, 1), padding=2,
+        self.conv1 = torch.nn.Conv2d(1, 16, kernel_size=(5, 5), stride=(1, 1), padding=2,
                                      device=device)
-        self.conv2 = torch.nn.Conv2d(32, 64, kernel_size=(5, 5), stride=(1, 1), padding=2,
+        self.conv2 = torch.nn.Conv2d(16, 32, kernel_size=(5, 5), stride=(1, 1), padding=2,
                                      device=device)
-        self.linear1 = torch.nn.Linear(7 * 7 * 64, 1000, device=device)
+        self.linear1 = torch.nn.Linear(7 * 7 * 32, 1000, device=device)
         self.linear2 = torch.nn.Linear(1000, 10, device=device)
 
     def forward(self, x):
@@ -73,7 +76,8 @@ def get_data_loaders(x, y):
     return train_data_loader, test_data_loader
 
 
-def fit(population: np.array, epochs, loss_func, train_dl, test_dl, descending=False):
+def fit(population: np.array, epochs, loss_func, train_dl, test_dl,
+        w_decay=0.1, descending=False):
     """if we need minimize loss_func- descending should be True"""
     # how many of the best species do we take from the population
     num_of_bests = int(len(population) * 0.1)
@@ -81,26 +85,35 @@ def fit(population: np.array, epochs, loss_func, train_dl, test_dl, descending=F
     result = torch.zeros(len(population), dtype=torch.float32)
     accuracy = Accuracy().to(device)
     start = time()
+    x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
     for epoch in range(epochs):
         for x, y in train_dl:
             for id_specie, specie in enumerate(population):
                 y_predict = specie(x)
                 loss = loss_func(y_predict, y)
+                # for param in specie.parameters():
+                #     loss += w_decay * (torch.pow(param, 2).sum())
                 result[id_specie] = loss
             best_ids = torch.argsort(result, descending=descending)[:num_of_bests]  # chosen the bests
             best_species = population[best_ids]
+
             for id_specie, specie in enumerate(population):
                 population[id_specie] = best_species[id_specie % num_of_bests].clone()
                 if id_specie > num_of_bests:
                     population[id_specie].mutate()
+
         if epoch % 1 == 0:
-            x_test, y_test = test_dl.dataset.tensors[0], test_dl.dataset.tensors[1]
             y_predict = best_species[0](x_test)
             acc = round(accuracy(y_predict, y_test).item(), 3)
+            best_loss_item = round(torch.min(result).item(), 4)
+
+            loss_history.append(best_loss_item)
+            acc_history.append(acc)
+            num_epochs.append(epoch)
             print(f"№{epoch} end in {round(time() - start)}secs. "
-                  f"Loss = {round(torch.min(result).item(), 4)}. "
-                  f"Acc = {acc}")
-            start = time()
+                  f"Loss = {loss_history[-1]}. "
+                  f"Acc = {acc_history[-1]}")
+        start = time()
     return best_species
 
 
@@ -124,10 +137,23 @@ def main():
     loss_fn = torch.nn.CrossEntropyLoss()
     epochs = 75
     with torch.no_grad():
-        net = fit(population, epochs, loss_fn, train_dl, test_dl)
+        net = fit(population, epochs, loss_fn, train_dl, test_dl, w_decay=0.000001)
     return net, mean_sample, std_sample
 
 
 if __name__ == "__main__":
+    loss_history = []
+    acc_history = []
+    num_epochs = []
+    df = pd.DataFrame([loss_history, acc_history, num_epochs]).T
+    df.columns = ["loss_history", "acc_history", "num_epochs"]
+
     device = torch.device("cuda")
     model, mean_, std_ = main()
+
+    xs = [i for i in range(len(loss_history))]
+    sns.set(rc={'figure.figsize': (15, 10)})
+    fig, ax = plt.subplots(2, 1)
+    sns.lineplot(x=xs, y=loss_history, ax=ax[0])  # , hue=num_epochs)
+    sns.lineplot(x=xs, y=acc_history, ax=ax[1])  # , hue=num_epochs)
+    fig.show()

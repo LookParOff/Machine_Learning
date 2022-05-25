@@ -136,9 +136,10 @@ def load_df():
     df.iloc[:, -1] = pd.to_datetime(df.iloc[:, -1])
     df.iloc[:, -1] = df.iloc[:, -1].dt.date
     print(df)
-    # df_ = df.iloc[:, [0, 3]]
     grouped_df = df.groupby("post_time").count()
-    sns.relplot(data=grouped_df, x="post_time", y="title", kind="line")
+    sns.set(rc={'figure.figsize': (11.7, 8.27)})
+    ax = sns.relplot(data=grouped_df, x="post_time", y="title", kind="line")
+    # ax.set_xticklabels(ax.get_xticklabels(),rotation = 270)
     plt.show()
 
 
@@ -173,19 +174,19 @@ if __name__ == "__main__":
     driver = webdriver.Chrome(service=ser, options=op)
     driver.set_window_position(-1200, 0)
     driver.maximize_window()
-    page_link = f'https://pikabu.ru/tag/Собака'
+    page_link = f'https://pikabu.ru/tag/Мигранты'
     driver.get(page_link)
     # Sign in
     sign_in = driver.find_elements(By.TAG_NAME, "form")[1]  # this is reference to sign in form
     login, password = sign_in.find_elements(By.CLASS_NAME, "input__input")
-    login.send_keys("Nickname")
+    login.send_keys("Parebrik")
     time.sleep(1)
-    password.send_keys("password")  # TODO change password :)
+    password.send_keys("XUM-G9S-CS3-hQz")  # TODO change password :)
     time.sleep(3)
     driver.find_element(By.CLASS_NAME, "button_success.button_width_100").click()  # click submit
     time.sleep(15)  # maybe need insert captcha
 
-    dates = split_on_weeks("01/01/20", "02/02/22", 10)
+    dates = split_on_weeks("01/01/20", "02/02/22", 50)
     data = []
     df = get_data_frame_of_site((0.75, 1.75), dates)
     df.columns = ["post_id", "title", "nick",
@@ -194,5 +195,5 @@ if __name__ == "__main__":
     driver.quit()
     df.replace(";", ".", inplace=True)
     df.to_csv(r"C:\Users\Norma\PycharmProjects\Machine "
-              r"Learning\Datasets\pikabu\dog 01.20_12.20.csv",
+              r"Learning\Datasets\pikabu\Migrants2 01.20_02.22.csv",
               sep=";", encoding="UTF-8")
