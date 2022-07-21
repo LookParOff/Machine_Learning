@@ -317,9 +317,6 @@ def main(coco_module):
     epochs = 10
     for ep in range(epochs):
         for x, y in tqdm(train_dataloader, leave=True, total=length_train_data // batch_size):
-            # скорее всего нужно убрать размерность для канала в y
-            # или сделать их две) тогда нужен софтмакс будет
-            # основная проблема нулевая ошибка в кроссэнтропии
             y_pred = unet(x)
             loss = loss_func(y_pred, y)
             optm.zero_grad()
