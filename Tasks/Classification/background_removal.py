@@ -13,6 +13,7 @@ import skimage.io as io
 import torch
 from torch.utils.data import IterableDataset, DataLoader
 import torchvision
+import torchvision.transforms.functional as F
 from torchmetrics import JaccardIndex
 from tqdm import tqdm
 
@@ -121,33 +122,48 @@ def EDA_of_images_sizes(coco, filtered_ann):
     plt.show()
 
 
-def check_of_loader_work(coco, filtered_ann, device):
-    dataset = IterableDatasetCOCO(coco, filtered_ann, (300, 300), device)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=3)
-    plt.figure(figsize=(20, 5))
-    for i, data in enumerate(dataloader):
-        if i == 3:
+def check_of_loader_work(coco, filtered_ann, device, num_of_pictures):
+    dataset = IterableDatasetCOCO(coco, filtered_ann, (300, 300), device, need_normalize=False)
+    dataloader = DataLoader(dataset, batch_size=1)
+    plt.figure(figsize=(10, 10))
+    n_rows = np.int(np.sqrt(num_of_pictures * 2))
+    n_cols = n_rows
+    if n_cols % 2 != 0:
+        n_cols += 1
+    if n_rows * n_cols < num_of_pictures * 2:
+        n_rows += 1
+    for i, (x, y) in enumerate(dataloader):
+        if i == num_of_pictures:
             break
-        x, y = data
-        plt.subplot(1, 6, i * 2 + 1)
+        plt.subplot(n_rows, n_cols, i * 2 + 1)
+        plt.axis("off")
         plt.imshow(x[0][0])
-        plt.subplot(1, 6, i * 2 + 2)
+        plt.imshow(x[0].to(dtype=torch.int32).permute([1, 2, 0]))
+        plt.subplot(n_rows, n_cols, i * 2 + 2)
+        plt.axis("off")
         plt.imshow(y[0][0])
     plt.show()
     print()
 
 
 class IterableDatasetCOCO(IterableDataset):
-    def __init__(self, coco, annotations, resize_shape, device):
+    def __init__(self, coco, annotations, resize_shape, device, need_normalize=True):
         super().__init__()
+        self.coco = coco
         self.annotation_of_images = annotations
         self.resize_shape = resize_shape
         self.device = device
-        self.coco = coco
+        self.need_normalize = need_normalize
         self.names_of_images = []
         self.__index = 0
 
-        self.to_tensor = torchvision.transforms.ToTensor()
+        # calculated empirical by training dataset
+        # mean = torch.mean(tensor_image, dim=[1, 2])
+        # std = torch.std(tensor_image, dim=[1, 2])
+        mean = [111.8526, 103.3080,  95.0226]
+        std = [75.0907, 72.1730, 73.3086]
+
+        self.norm = torchvision.transforms.Normalize(mean, std)
         self.resize = torchvision.transforms.Resize(self.resize_shape)
 
         for ann in self.annotation_of_images:
@@ -167,26 +183,13 @@ class IterableDatasetCOCO(IterableDataset):
             end = min(start + per_worker, end)
         names = self.names_of_images[start:end]
         for i, name in enumerate(names):
-            # tensor_image = torch.empty((3, self.resize_shape[0], self.resize_shape[1]),
-            #                            device=self.device)  # (C, H, W)
-            # tensor_mask = torch.empty((1, self.resize_shape[0], self.resize_shape[1]),
-            #                           device=self.device)
             name = self.names_of_images[start + i]
             img = Image.open(f"Datasets/COCO persons/{name}")
-            # tensor_image = self.to_tensor(img)
-            tensor_image = torch.tensor(np.array(img), device=self.device, dtype=torch.float32)
+            tensor_image = torch.tensor(np.array(img), device=self.device, dtype=torch.int32)
             if len(tensor_image.shape) != 3:
                 # skip black and white  image
                 continue
             tensor_image = tensor_image.permute((2, 0, 1))
-
-            # mean = torch.mean(tensor_image, dim=[1, 2])
-            # std = torch.std(tensor_image, dim=[1, 2])
-            # calculated empirical by training dataset
-            mean = [113.9068, 90.2008, 74.9105]
-            std = [51.5830, 61.2258, 64.5600]
-            norm = torchvision.transforms.Normalize(mean, std)
-            tensor_image = norm(tensor_image)
             tensor_image = self.resize(tensor_image)
 
             image_mask = self.coco.annToMask(self.annotation_of_images[start + i])
@@ -195,7 +198,33 @@ class IterableDatasetCOCO(IterableDataset):
             tensor_mask_person = self.resize(tensor_mask_person)
             tensor_mask_background = torch.abs(tensor_mask_person - 1)
             tensor_mask = torch.concat([tensor_mask_person, tensor_mask_background], dim=0)
+
+            tensor_image, tensor_mask = self.transformation(tensor_image, tensor_mask)
+            tensor_image = tensor_image.to(dtype=torch.float32)
+            if self.need_normalize:
+                tensor_image = self.norm(tensor_image)
+
             yield tensor_image, tensor_mask
+
+    def transformation(self, tensor_image, tensor_mask):
+        p = np.random.random()
+        if p < 0.5:
+            tensor_image = F.hflip(tensor_image)
+            tensor_mask = F.hflip(tensor_mask)
+        p = np.random.random()
+        if p < 0.5:
+            angle = np.random.randint(-40, 40)
+            tensor_image = F.rotate(tensor_image, angle)
+            tensor_mask = F.rotate(tensor_mask, angle)
+        p = np.random.random()
+        if p < 0.5:
+            factor = np.random.uniform(0.5, 1.5)
+            tensor_image = F.adjust_contrast(tensor_image, factor)
+        p = np.random.random()
+        if p < 0.5:
+            factor = np.random.uniform(0.5, 1.5)
+            tensor_image = F.adjust_contrast(tensor_image, factor)
+        return tensor_image, tensor_mask
 
     def __iter__(self):
         return iter(self.get_next_data())
@@ -219,10 +248,11 @@ class Block(torch.nn.Module):
 
 
 class Encoder(torch.nn.Module):
-    def __init__(self, device):
+    def __init__(self, shapes, device):
         super().__init__()
         self.max_pooling = torch.nn.MaxPool2d((2, 2))
-        self.block_sizes = [3, 64, 128]
+        # self.block_sizes = [3, 64, 128]
+        self.block_sizes = shapes
         self.blocks = [Block(self.block_sizes[i], self.block_sizes[i + 1], device)
                        for i, _ in enumerate(self.block_sizes[:-1])]
 
@@ -239,9 +269,10 @@ class Encoder(torch.nn.Module):
 
 
 class Decoder(torch.nn.Module):
-    def __init__(self, device):
+    def __init__(self, shapes, device):
         super().__init__()
-        self.block_sizes = [128, 64]
+        # self.block_sizes = [128, 64]
+        self.block_sizes = shapes
         self.blocks = [Block(self.block_sizes[i], self.block_sizes[i + 1], device)
                        for i, _ in enumerate(self.block_sizes[:-1])]
         self.transpose_convs = [torch.nn.ConvTranspose2d
@@ -272,10 +303,14 @@ class Decoder(torch.nn.Module):
 
 
 class UNet(torch.nn.Module):
-    def __init__(self, device):
+    def __init__(self, shapes, device):
+        """
+        :param shapes: shapes of filter in each block of encoder and decoder
+        :param device:
+        """
         super().__init__()
-        self.encoder = Encoder(device)
-        self.decoder = Decoder(device)
+        self.encoder = Encoder(shapes, device)
+        self.decoder = Decoder(shapes[:0:-1], device)
         self.conv1 = torch.nn.Conv2d(64, 2, kernel_size=(1, 1), device=device)
         self.SoftMax = torch.nn.Softmax(dim=1)  # along chanel dimension
 
@@ -291,6 +326,7 @@ class UNet(torch.nn.Module):
 
 def main(coco_module):
     device = torch.device("cuda")
+    print(device)
     filtered_annotation = get_filtered_data(coco_module)
     # filtered_annotation = filtered_annotation[:100]
     length_train_data = int(len(filtered_annotation) * 0.8)
@@ -303,10 +339,10 @@ def main(coco_module):
     train_dataloader = DataLoader(dataset_train, batch_size=batch_size, num_workers=0)
     test_dataloader = DataLoader(dataset_test, batch_size=1, num_workers=0)
     print(train_dataloader.batch_size)
-    unet = UNet(device)
+    unet = UNet([3, 64, 128], device)
     loss_func = torch.nn.CrossEntropyLoss()
 
-    optm = torch.optim.Adam(unet.parameters(), lr=0.0001)
+    optm = torch.optim.Adam(unet.parameters(), lr=0.01)
     metric_jaccard_macro = JaccardIndex(2, average="macro").to(device=device)
     metric_jaccard_micro = JaccardIndex(2, average="micro").to(device=device)
 
@@ -314,7 +350,7 @@ def main(coco_module):
     history_jac_mac = []
     history_jac_mic = []
 
-    epochs = 10
+    epochs = 3
     for ep in range(epochs):
         for x, y in tqdm(train_dataloader, leave=True, total=length_train_data // batch_size):
             y_pred = unet(x)
@@ -338,22 +374,41 @@ def main(coco_module):
             history_loss[-1] /= length_test_data
             history_jac_mac[-1] /= length_test_data
             history_jac_mic[-1] /= length_test_data
-        if ep % 2 == 0:
-            torch.save(unet.state_dict(), f"unet_after_{ep}_10_BS")
+        # if ep % 2 == 0:
+        #     torch.save(unet.state_dict(), f"unet_after_{ep}_10_BS")
     return unet, history_loss, history_jac_mac, history_jac_mic
 
 
 if __name__ == "__main__":
     coco_module = COCO("Datasets/COCO persons/annotations/instances_train2017.json")
+
     unet_, history_loss_, history_jac_mac_, history_jac_mic_ = main(coco_module)
-    # filtered_annotation_ = get_filtered_data(coco_module)
-    # filtered_annotation_ = filtered_annotation_[:100]
-    # length_train_data_ = int(len(filtered_annotation_) * 0.8)
-    # dataset_train_ = IterableDatasetCOCO(coco_module, filtered_annotation_[:length_train_data_],
-    #                                      (300, 300), torch.device("cuda"))
-    # dataloader_ = DataLoader(dataset_train_, batch_size=3)
-    # for i, data in enumerate(dataloader_):
-    #     if i == 3:
+
+    filtered_annotation_ = get_filtered_data(coco_module)
+    length_train_data_ = int(len(filtered_annotation_) * 0.8)
+    dataset_train_ = IterableDatasetCOCO(coco_module, filtered_annotation_[:length_train_data_],
+                                         (300, 300), torch.device("cpu"))
+    dataloader_ = DataLoader(dataset_train_, batch_size=1)
+    to_pil = torchvision.transforms.ToPILImage()
+    unet_ = UNet([3, 64, 128, 256], torch.device("cpu"))
+    unet_.load_state_dict(torch.load(
+        "Saved_models/background remove/unet_final_16_BS_256_params(fixed lr).pth")
+    )
+    # for x, y in dataloader_:
+    #     mean = torch.mean(x, dim=[0, 2, 3])
+    #     std = torch.std(x, dim=[0, 2, 3])
+    #     print(mean, std)
+
+    check_of_loader_work(coco_module, filtered_annotation_, torch.device("cpu"), 32)
+
+    # for i, (x, y) in enumerate(dataloader_):
+    #     if i == 1:
     #         break
-    #     x, y = data
-    #     unet_(x)
+    #     pred = unet_(x)
+    #     x = x[0]
+    #     y = y[0][0]  # human mask
+    #     pred = pred[0]
+    #     plt.imshow(to_pil(y))
+    #     plt.show()
+    #     plt.imshow(to_pil(torch.argmax(pred, dim=0).to(dtype=torch.float32)))
+    #     plt.show()
