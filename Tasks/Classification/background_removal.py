@@ -146,21 +146,34 @@ def check_of_loader_work(coco, filtered_ann, device, num_of_pictures):
     print()
 
 
+def print_mean_std_of_images(coco):
+    dataloader = get_dataloader(coco, 2000, torch.device("cpu"),
+                                False, False)
+    for x, _ in dataloader:
+        mean = torch.mean(x, dim=[0, 2, 3])
+        std = torch.std(x, dim=[0, 2, 3])
+        print(mean, std)
+
+
 class IterableDatasetCOCO(IterableDataset):
-    def __init__(self, coco, annotations, resize_shape, device, need_normalize=True):
+    def __init__(self, coco, path_to_images, annotations, resize_shape, device,
+                 need_normalize=True, need_transformations=True):
         super().__init__()
         self.coco = coco
+        self.path_to_images = path_to_images
         self.annotation_of_images = annotations
         self.resize_shape = resize_shape
         self.device = device
         self.need_normalize = need_normalize
+        self.need_transformations = need_transformations
+
         self.names_of_images = []
         self.__index = 0
 
         # calculated empirical by training dataset
         # mean = torch.mean(tensor_image, dim=[1, 2])
         # std = torch.std(tensor_image, dim=[1, 2])
-        mean = [111.8526, 103.3080,  95.0226]
+        mean = [111.8526, 103.3080, 95.0226]
         std = [75.0907, 72.1730, 73.3086]
 
         self.norm = torchvision.transforms.Normalize(mean, std)
@@ -184,7 +197,7 @@ class IterableDatasetCOCO(IterableDataset):
         names = self.names_of_images[start:end]
         for i, name in enumerate(names):
             name = self.names_of_images[start + i]
-            img = Image.open(f"Datasets/COCO persons/{name}")
+            img = Image.open(f"{self.path_to_images}/{name}")
             tensor_image = torch.tensor(np.array(img), device=self.device, dtype=torch.int32)
             if len(tensor_image.shape) != 3:
                 # skip black and white  image
@@ -197,10 +210,13 @@ class IterableDatasetCOCO(IterableDataset):
             tensor_mask_person = torch.unsqueeze(tensor_mask_person, dim=0)
             tensor_mask_person = self.resize(tensor_mask_person)
             tensor_mask_background = torch.abs(tensor_mask_person - 1)
-            tensor_mask = torch.concat([tensor_mask_person, tensor_mask_background], dim=0)
+            tensor_mask = torch.concat([tensor_mask_background, tensor_mask_person], dim=0)
 
-            tensor_image, tensor_mask = self.transformation(tensor_image, tensor_mask)
+            if self.need_transformations:
+                tensor_image, tensor_mask = self.transformation(tensor_image, tensor_mask)
+
             tensor_image = tensor_image.to(dtype=torch.float32)
+
             if self.need_normalize:
                 tensor_image = self.norm(tensor_image)
 
@@ -226,8 +242,32 @@ class IterableDatasetCOCO(IterableDataset):
             tensor_image = F.adjust_contrast(tensor_image, factor)
         return tensor_image, tensor_mask
 
+    def __len__(self):
+        return len(self.annotation_of_images)
+
     def __iter__(self):
         return iter(self.get_next_data())
+
+
+def get_dataloader(coco, path_to_images, images_shape,
+                   batch_size, device, limiter=0,
+                   need_transformations=True, need_normalize=True):
+    filtered_annotation = get_filtered_data(coco)
+    if limiter > 0:
+        filtered_annotation = filtered_annotation[:limiter]
+    length_train_data = int(len(filtered_annotation) * 0.8)
+    length_test_data = len(filtered_annotation) - length_train_data
+    dataset_train = IterableDatasetCOCO(coco_module, path_to_images,
+                                        filtered_annotation[:length_train_data],
+                                        images_shape, device,
+                                        need_transformations=need_transformations,
+                                        need_normalize=need_normalize)
+    dataset_test = IterableDatasetCOCO(coco_module, path_to_images,
+                                       filtered_annotation[length_train_data:],
+                                       images_shape, device)
+    train_dataloader = DataLoader(dataset_train, batch_size=batch_size, num_workers=0)
+    test_dataloader = DataLoader(dataset_test, batch_size=1, num_workers=0)
+    return train_dataloader, test_dataloader, length_train_data, length_test_data
 
 
 class Block(torch.nn.Module):
@@ -249,12 +289,14 @@ class Block(torch.nn.Module):
 
 class Encoder(torch.nn.Module):
     def __init__(self, shapes, device):
-        super().__init__()
+        super(Encoder, self).__init__()
         self.max_pooling = torch.nn.MaxPool2d((2, 2))
         # self.block_sizes = [3, 64, 128]
         self.block_sizes = shapes
-        self.blocks = [Block(self.block_sizes[i], self.block_sizes[i + 1], device)
-                       for i, _ in enumerate(self.block_sizes[:-1])]
+        self.blocks = torch.nn.ModuleList(
+            [Block(self.block_sizes[i], self.block_sizes[i + 1], device)
+             for i, _ in enumerate(self.block_sizes[:-1])]
+        )
 
     def forward(self, x):
         copy_crops = []  # for operation copy and crop
@@ -265,20 +307,25 @@ class Encoder(torch.nn.Module):
             out = self.max_pooling(out)
 
         out = self.blocks[-1](out)
+        copy_crops = copy_crops[::-1]  # this will be putted in decoder in reversed order
         return out, copy_crops
 
 
 class Decoder(torch.nn.Module):
     def __init__(self, shapes, device):
-        super().__init__()
+        super(Decoder, self).__init__()
         # self.block_sizes = [128, 64]
         self.block_sizes = shapes
-        self.blocks = [Block(self.block_sizes[i], self.block_sizes[i + 1], device)
-                       for i, _ in enumerate(self.block_sizes[:-1])]
-        self.transpose_convs = [torch.nn.ConvTranspose2d
-                                (self.block_sizes[i], self.block_sizes[i + 1],
-                                 kernel_size=(2, 2), stride=(2, 2), padding=(0, 0), device=device)
-                                for i, _ in enumerate(self.block_sizes[:-1])]
+        self.blocks = torch.nn.ModuleList(
+            [Block(self.block_sizes[i], self.block_sizes[i + 1], device)
+             for i, _ in enumerate(self.block_sizes[:-1])]
+        )
+        self.transpose_convs = torch.nn.ModuleList(
+            [torch.nn.ConvTranspose2d
+             (self.block_sizes[i], self.block_sizes[i + 1], kernel_size=(2, 2), stride=(2, 2),
+              padding=(0, 0), device=device)
+             for i, _ in enumerate(self.block_sizes[:-1])]
+        )
 
     def forward(self, x, copy_crops):
         # copy_crops for skip connection
@@ -308,7 +355,7 @@ class UNet(torch.nn.Module):
         :param shapes: shapes of filter in each block of encoder and decoder
         :param device:
         """
-        super().__init__()
+        super(UNet, self).__init__()
         self.encoder = Encoder(shapes, device)
         self.decoder = Decoder(shapes[:0:-1], device)
         self.conv1 = torch.nn.Conv2d(64, 2, kernel_size=(1, 1), device=device)
@@ -316,99 +363,113 @@ class UNet(torch.nn.Module):
 
     def forward(self, x):
         out, copy_crops = self.encoder(x)
-        copy_crops = copy_crops[::-1]
-
         out = self.decoder(out, copy_crops)
         out = self.conv1(out)
         out = self.SoftMax(out)
         return out
 
+    def change_mode_to_train(self):
+        self.train()
+        self.encoder.train()
+        self.decoder.train()
+
+    def change_mode_to_eval(self):
+        self.eval()
+        self.encoder.eval()
+        self.decoder.eval()
+
+
+def fit(model, model_save_path, epochs, loss_func, opt,  # scheduler,
+        train_dl, test_dl, metric, len_train, len_test):
+    history_loss = []
+    history_metric = []
+
+    for ep in range(epochs):
+        # model.change_mode_to_train()
+        for x, y in train_dl:
+            y_pred = model(x)
+            loss = loss_func(y_pred, y)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+        print(f"№{ep}, loss {loss.item()}", end="\r")
+        history_loss.append(loss.item())
+        with torch.no_grad():
+            # model.change_mode_to_eval()
+            history_metric.append(0)
+            for x, y in test_dl:
+                y_pred = model(x)
+                history_metric[-1] += metric(y_pred, y.to(dtype=torch.int32))
+            history_metric[-1] = history_metric[-1].cpu() / len_test
+
+        if ep % 10 == 0:
+            torch.save(model.state_dict(), model_save_path)
+        # scheduler.step()
+    return model, history_loss, history_metric
+
 
 def main(coco_module):
     device = torch.device("cuda")
     print(device)
-    filtered_annotation = get_filtered_data(coco_module)
-    # filtered_annotation = filtered_annotation[:100]
-    length_train_data = int(len(filtered_annotation) * 0.8)
-    length_test_data = len(filtered_annotation) - length_train_data
-    dataset_train = IterableDatasetCOCO(coco_module, filtered_annotation[:length_train_data],
-                                        (300, 300), device)
-    dataset_test = IterableDatasetCOCO(coco_module, filtered_annotation[length_train_data:],
-                                       (300, 300), device)
-    batch_size = 10
-    train_dataloader = DataLoader(dataset_train, batch_size=batch_size, num_workers=0)
-    test_dataloader = DataLoader(dataset_test, batch_size=1, num_workers=0)
-    print(train_dataloader.batch_size)
-    unet = UNet([3, 64, 128], device)
+    unet = UNet([3, 64, 128, 256], device)
+    model_save_path = f"Saved_models/background remove/unet_fix_test2.pth"
+    images_path = "Datasets/COCO persons"
+    images_shape = (250, 250)
+    epochs = 200
     loss_func = torch.nn.CrossEntropyLoss()
+    batch_size = 10
 
-    optm = torch.optim.Adam(unet.parameters(), lr=0.01)
-    metric_jaccard_macro = JaccardIndex(2, average="macro").to(device=device)
-    metric_jaccard_micro = JaccardIndex(2, average="micro").to(device=device)
+    train_dataloader, test_dataloader, len_train, len_test = \
+        get_dataloader(coco_module, images_path, images_shape, batch_size, device,
+                       limiter=10, need_transformations=False)
 
-    history_loss = []
-    history_jac_mac = []
-    history_jac_mic = []
+    optm = torch.optim.Adam(unet.parameters(), lr=0.0001)
+    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optm, [100, 150], gamma=0.9)
+    metric_jaccard = JaccardIndex(2, average="macro").to(device=device)
 
-    epochs = 3
-    for ep in range(epochs):
-        for x, y in tqdm(train_dataloader, leave=True, total=length_train_data // batch_size):
-            y_pred = unet(x)
-            loss = loss_func(y_pred, y)
-            optm.zero_grad()
-            loss.backward()
-            optm.step()
-        print(loss.item())
-        with torch.no_grad():
-            history_loss.append(0)
-            history_jac_mac.append(0)
-            history_jac_mic.append(0)
-            for x, y in test_dataloader:
-                y_pred = unet(x)
-                loss = loss_func(y_pred, y)
-                mjma = metric_jaccard_macro(y_pred, y.to(dtype=torch.int32))
-                mjmi = metric_jaccard_micro(y_pred, y.to(dtype=torch.int32))
-                history_loss[-1] += loss
-                history_jac_mac[-1] += mjma
-                history_jac_mic[-1] += mjmi
-            history_loss[-1] /= length_test_data
-            history_jac_mac[-1] /= length_test_data
-            history_jac_mic[-1] /= length_test_data
-        # if ep % 2 == 0:
-        #     torch.save(unet.state_dict(), f"unet_after_{ep}_10_BS")
-    return unet, history_loss, history_jac_mac, history_jac_mic
+    unet, history_loss, history_jac = \
+        fit(unet, model_save_path, epochs, loss_func, optm,  # scheduler,
+            train_dataloader, test_dataloader,
+            metric_jaccard,
+            len_train, len_test)
+
+    plt.plot(np.arange(0, len(history_loss)), history_loss)
+    plt.title("train loss")
+    plt.show()
+
+    plt.plot(np.arange(0, len(history_jac)), history_jac)
+    plt.title("test metric")
+    plt.show()
+
+    return unet, history_loss, history_jac
 
 
 if __name__ == "__main__":
+    print("Hello")
     coco_module = COCO("Datasets/COCO persons/annotations/instances_train2017.json")
 
-    unet_, history_loss_, history_jac_mac_, history_jac_mic_ = main(coco_module)
+    unet_, history_loss_, history_jac_mac_ = main(coco_module)
+    print("total stat:")
+    print(history_loss_)
+    print(history_jac_mac_)
 
-    filtered_annotation_ = get_filtered_data(coco_module)
-    length_train_data_ = int(len(filtered_annotation_) * 0.8)
-    dataset_train_ = IterableDatasetCOCO(coco_module, filtered_annotation_[:length_train_data_],
-                                         (300, 300), torch.device("cpu"))
-    dataloader_ = DataLoader(dataset_train_, batch_size=1)
+    # unet_ = UNet([3, 64, 128, 256], torch.device("cuda"))
+    # unet_.load_state_dict(torch.load(
+    #     "Saved_models/background remove/unet_after_0_16_BS_256_params(augment data).pth")
+    # )
+
+    dataloader_, _, _, _ = get_dataloader(coco_module, "Datasets/COCO persons",
+                                          (100, 100), 1, torch.device("cuda"),
+                                          need_transformations=False)
     to_pil = torchvision.transforms.ToPILImage()
-    unet_ = UNet([3, 64, 128, 256], torch.device("cpu"))
-    unet_.load_state_dict(torch.load(
-        "Saved_models/background remove/unet_final_16_BS_256_params(fixed lr).pth")
-    )
-    # for x, y in dataloader_:
-    #     mean = torch.mean(x, dim=[0, 2, 3])
-    #     std = torch.std(x, dim=[0, 2, 3])
-    #     print(mean, std)
-
-    check_of_loader_work(coco_module, filtered_annotation_, torch.device("cpu"), 32)
-
-    # for i, (x, y) in enumerate(dataloader_):
-    #     if i == 1:
-    #         break
-    #     pred = unet_(x)
-    #     x = x[0]
-    #     y = y[0][0]  # human mask
-    #     pred = pred[0]
-    #     plt.imshow(to_pil(y))
-    #     plt.show()
-    #     plt.imshow(to_pil(torch.argmax(pred, dim=0).to(dtype=torch.float32)))
-    #     plt.show()
+    for i, (x, y) in enumerate(dataloader_):
+        if i == 3:
+            break
+        pred = unet_(x)
+        x = x[0]
+        y = y[0]
+        pred = pred[0]
+        plt.imshow(to_pil(torch.argmax(y, dim=0).to(dtype=torch.float32)))
+        plt.show()
+        plt.imshow(to_pil(torch.argmax(pred, dim=0).to(dtype=torch.float32)))
+        plt.show()
